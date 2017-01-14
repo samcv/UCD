@@ -5,11 +5,14 @@ use lib 'lib';
 use UCDlib;
 INIT say "Initializing...";
 my Str $folder = "UNIDATA";
-my %points;
-my %binary_properties;
+my %points{Int};
+my %binary-properties;
 my %decomp_spec;
 sub MAIN ( Bool :$dump = False, Bool :$make = False ) {
     chdir "..";
+    binary-property(1, 'emoji/emoji-data');
+    # Not needed, in UnicodeData ?
+    #binary-property(1, 'extracted/DerivedBinaryProperties');
     UnicodeData("UnicodeData");
     enumerated-property(1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
     NameAlias("NameAlias", "NameAliases" );
@@ -18,13 +21,25 @@ sub MAIN ( Bool :$dump = False, Bool :$make = False ) {
     if $make {
         spurt "bitfield.c", make-bitfield-rows();
     }
-    #say "Points: " ~ %points{"\r".ord}.perl;
-    #say %decomp_spec{"\r".ord};
-    #say %binary_properties.perl;
 }
 sub dump {
     say 'Dumping %points';
     Dump-Range(900..1000, %points);
+}
+sub binary-property ( Int $column, Str $filename ) {
+    my %props-seen;
+    for slurp-lines($filename) {
+        next if skip-line($_);
+        my @parts = .split-trim(/';'|'#'/, $column + 2);
+        my $property = @parts[$column];
+        %props-seen{$property} = True unless %props-seen{$property};
+        my $range = @parts[0];
+        my %point;
+        %point{$property} = True;
+        #say "Range: $range Property: $property";
+        apply-to-cp($range, %point);
+    }
+    register-binary-property(%props-seen.keys.sort);
 }
 sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filename ) {
     # XXX program for @ references for ranges in the comments
@@ -56,10 +71,10 @@ sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filenam
 sub register-binary-property (+@names) {
     for @names -> $name {
         note "Registering binary property $name";
-        if %binary_properties{$name}.defined {
-            die "Tried to add $name but binary property already exists";
+        if %binary-properties{$name}.defined {
+            note "Tried to add $name but binary property already exists";
         }
-        %binary_properties{$name} = name => $name, bitwidth => 1;
+        %binary-properties{$name} = name => $name, bitwidth => 1;
     }
 }
 sub tweak_nfg_qc {
@@ -79,7 +94,7 @@ sub tweak_nfg_qc {
         # Eventually we will only want to set the ones that are NOT specified
         # as ZWJ sequences
         for <Grapheme_Cluster_Break Emoji Hangul_Syllable_Type> -> $prop {
-            %points{$code}{$prop} = False if %points{$code}{$prop};
+            %points{$code}<NFG_QC>= False if %points{$code}{$prop};
         }
     }
 }
@@ -90,10 +105,12 @@ sub tweak_nfg_qc {
 # sub path($cp, +@a) { say "\@.perl: @a.perl()"; @a.reduce({ $^a{$^b}:exists ?? $^a{$^b} !! $^a{$^b} = {} }) };
 sub slurp-lines ( Str $filename ) returns Seq {
     note "Reading $filename.txt...";
-    "$folder/$filename.txt".IO.slurp.lines;
+    "$folder/$filename.txt".IO.slurp.lines orelse die;
 }
-sub prefix:< ¿ > ( Str $str ) { $str.defined and $str ne '' ?? True !! False }
-sub infix:< ?= > ($left is rw, $right) { $left = $right if ¿$right }
+multi sub prefix:< ¿ > ( Str $str ) { $str.defined and $str ne '' ?? True !! False }
+multi sub prefix:< ¿ > ( Bool $bool ) { $bool.defined and $bool != False }
+sub infix:< =? > ($left is rw, $right) { $left = $right if ¿$right }
+sub infix:< ?= > ($left is rw, $right) { $left = $right if ¿$left }
 sub skip-line ( Str $line ) {
     $line.starts-with('#') or $line.match(/^\s*$/) ?? True !! False;
 }
@@ -120,12 +137,12 @@ sub UnicodeData ( Str $file ) {
         }
         return if $cp > 1000;
         my %hash;
-        %hash<Unicode_1_Name>            ?= $u1name;
-        %hash<name>                      ?= $name;
-        %hash<gencat_name>               ?= $gencat;
-        %hash<General_Category>          ?= $gencat;
-        %hash<Canonical_Combining_Class> ?= $ccclass;
-        %hash<Bidi_Class>                ?= $bidiclass;
+        %hash<Unicode_1_Name>            =? $u1name;
+        %hash<name>                      =? $name;
+        %hash<gencat_name>               =? $gencat;
+        %hash<General_Category>          =? $gencat;
+        %hash<Canonical_Combining_Class> =? $ccclass;
+        %hash<Bidi_Class>                =? $bidiclass;
         %hash<suc>     = :16($suc) if ¿$suc;
         %hash<slc>     = :16($slc) if ¿$slc;
         %hash<stc>     = :16($stc) if ¿$stc;
@@ -175,6 +192,7 @@ sub apply-to-points (Int $cp, Hash $hashy) {
         else {
             for $hashy{$key}.keys -> $key2 {
                 if !defined %points{$cp}{$key}{$key2} {
+                    say "\$hashy\{$key\}\{$key2\}";
                     %points{$cp}{$key}{$key2} = $hashy{$key}{$key2};
                 }
                 else {
@@ -191,39 +209,31 @@ sub make-bitfield-rows {
     my %prop-to-code;
     my Int $i = 0;
     my $binary-struct-str;
-    # Make a mapping of binary property names to codes
-    my $struct-bin = "struct binary_prop_bitfield  \{\n";
-    for %binary_properties.keys.sort -> $bin {
+    # Create the order of the struct
+    my $header = "struct binary_prop_bitfield  \{\n";
+    for %binary-properties.keys.sort -> $bin {
         %prop-to-code{$bin} = $i;
         %code-to-prop{$i} = $bin;
         $i++;
-        $struct-bin ~= "    int $bin :1;\n"
+        $header ~= "    unsigned int $bin :1;\n"
     }
-    $struct-bin ~= "\};\n";
-    $struct-bin ~= "typedef struct binary_prop_bitfield binary_prop_bitfield;\n";
+    $header ~= "\};\n";
+    $header ~= "typedef struct binary_prop_bitfield binary_prop_bitfield;\n";
     my Int $bin-index = 0;
-    #say $struct-bin;
-    #say %prop-to-code.perl;
-    #exit;
-    my $seq = %points.keys.sort;
-    for $seq.lazy -> $point {
+    # Not sure why the Int's turn into strings…
+    for %points.keys.sort.lazy -> $point {
+        die if $point !~~ Int;
         my @props;
         for %code-to-prop.keys.sort -> $propcode {
             my $prop = %code-to-prop{$propcode};
-            #say "prop $prop propcode $propcode";
-            #exit;
             if %points{$point}{$prop}:exists {
-                say %points{$point}{$prop}.gist;
                 @props.push(%points{$point}{$prop} ?? 1 !! 0);
             }
             else {
-                #say %points{$point}.perl;
-                #say $bin;
-                #exit;
                 @props.push(0);
             }
         }
-        $binary-struct-str ~= '{' ~ @props.join(',') ~ '}' ~ ',' ~ "\n";
+        $binary-struct-str ~= '    {' ~ @props.join(',') ~ "\},/* $point.Int.uniname() */"  ~ "\n";
         # If we matched ANY of the binary properties, increment the index by one
         # and set this points index for binary props
 
@@ -231,23 +241,29 @@ sub make-bitfield-rows {
 
     }
     $binary-struct-str ~~ s/','$//;
-    $binary-struct-str = qq:to/END/;
+    my @array;
+    push @array, $header;
+    push @array, qq:to/END/;
     #include <stdio.h>
     static const binary_prop_bitfield mybitfield[$bin-index] = \{
         $binary-struct-str
         \};
+    END
+    push @array, q:to/END2/;
     int main (void) {
         printf("U+0000 Bidi_Mirrored: %i NFG_QC: %i\n", mybitfield[0].Bidi_Mirrored, mybitfield[0].NFG_QC);
     }
-    END
-    $struct-bin ~= $binary-struct-str;
-    return $struct-bin;
+    END2
+    #push @array, $binary-struct-str;
+    return @array.join("\n");
 }
 
-sub dump-json {
+sub dump-json ( Bool $dump ) {
     note "Converting data to JSON...";
-    spurt "points.json", to-json(%points);
-    spurt "decomp_spec.json", to-json(%decomp_spec);
-    #spurt "enumerated-property.json", to-json(%enumerated-property);
-    spurt "binary_properties", to-json(%binary_properties);
+    if $dump {
+        spurt "points.json", to-json(%points);
+        spurt "decomp_spec.json", to-json(%decomp_spec);
+    }
+    spurt "enumerated-property.json", to-json(%enumerated-property);
+    spurt "binary-properties.json", to-json(%binary-properties);
 }
