@@ -22,16 +22,16 @@ sub circumfix:<⟅ ⟆>(*@array) returns str {
 }
 sub MAIN ( Bool :$dump = False, Bool :$make = False ) {
     chdir "..";
-    binary-property(1, 'emoji/emoji-data');
-    binary-property(1, 'DerivedCoreProperties');
-    enumerated-property(1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType');
+    #binary-property(1, 'emoji/emoji-data');
+    #binary-property(1, 'DerivedCoreProperties');
+    #enumerated-property(1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType');
     # Not needed, in UnicodeData ?
     # Also we don't account for this case where we try and add a property that already exists
     #binary-property(1, 'extracted/DerivedBinaryProperties');
-    enumerated-property(1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
+    #enumerated-property(1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
     UnicodeData("UnicodeData");
-    NameAlias("NameAlias", "NameAliases" );
-    tweak_nfg_qc();
+    #NameAlias("NameAlias", "NameAliases" );
+    #tweak_nfg_qc();
     dump-json($dump);
     if $make {
         my $var = q:to/END2/;
@@ -81,17 +81,8 @@ sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filenam
         %point{$propname} = $prop-val;
         %points-by-range{$range} = %point;
     }
-    my %enum;
-    # Start the enum values at 0
-    my Int $number = 0;
-    # Our false name we got should be number 0, is different depending on the category
-    %enum{$negname} = $number++;
-    for %seen-values.keys.sort {
-        %enum{$_} = $number++;
-    }
-    register-enum-property($propname, %enum, $number - 1);
-    say %seen-values.perl;
-    say %enum;
+    # Eventually this may be able to be wrapped into register-enum-property
+    my %enum = register-enum-property($propname, $negname, %seen-values);
     for %points-by-range.keys -> $range {
         %points-by-range{$range}{$propname} = %enum{%points-by-range{$range}{$propname}};
         apply-to-cp($range, %points-by-range{$range});
@@ -111,14 +102,26 @@ sub register-binary-property (+@names) {
 sub compute-bitwidth ( Int $max ) {
     $max.base(2).chars;
 }
-sub register-enum-property (Str $propname, Hash $hashy, Int $max) {
-    say $hashy.perl;
+# Eventually we will make a multi that can take ints
+sub register-enum-property (Str $propname, $negname, %seen-values) {
+    my %enum;
+    # Start the enum values at 0
+    my Int $number = 0;
+    # Our false name we got should be number 0, and will be different depending on the category
+    %enum{$negname} = $number++;
+    for %seen-values.keys.sort {
+        %enum{$_} = $number++;
+    }
+    my Int $max = $number - 1;
+    say %enum.perl;
     #exit;
     note "Registering enum property $propname";
-    %enumerated-properties{$propname} = $hashy;
+    %enumerated-properties{$propname} = %enum;
     %enumerated-properties{$propname}<name> = $propname;
     %enumerated-properties{$propname}<bitwidth> = compute-bitwidth($max);
+    %enumerated-properties{$propname}<type> = $negname.WHAT.^name;
     %all-properties{$propname} = %enumerated-properties{$propname};
+    return %enum;
 }
 sub tweak_nfg_qc {
     note "Tweaking NFG_QC…";
@@ -152,6 +155,7 @@ sub slurp-lines ( Str $filename ) returns Seq {
 }
 multi sub prefix:< ¿ > ( Str $str ) { $str.defined and $str ne '' ?? True !! False }
 multi sub prefix:< ¿ > ( Bool $bool ) { $bool.defined and $bool != False }
+
 sub infix:< =? > ($left is rw, $right) { $left = $right if ¿$right }
 sub infix:< ?= > ($left is rw, $right) { $left = $right if ¿$left }
 sub skip-line ( Str $line ) {
@@ -168,6 +172,7 @@ sub NameAlias ( Str $property, Str $file ) {
 }
 sub UnicodeData ( Str $file ) {
     register-binary-property(<NFD_QC NFC_QC NFKD_QC NFG_QC Any Bidi_Mirrored>);
+    my %seen-ccc;
     for slurp-lines $file {
         next if skip-line($_);
         my @parts = .split(';');
@@ -184,7 +189,10 @@ sub UnicodeData ( Str $file ) {
         %hash<name>                      =? $name;
         %hash<gencat_name>               =? $gencat;
         %hash<General_Category>          =? $gencat;
-        %hash<Canonical_Combining_Class> =? $ccclass;
+        if $ccclass {
+            %seen-ccc{$ccclass} = True unless %seen-ccc{$ccclass}:exists;
+            %hash<Canonical_Combining_Class> = $ccclass;
+        }
         %hash<Bidi_Class>                =? $bidiclass;
         %hash<suc>     = :16($suc) if ¿$suc;
         %hash<slc>     = :16($slc) if ¿$slc;
@@ -207,6 +215,8 @@ sub UnicodeData ( Str $file ) {
         }
         apply-to-cp($code-str, %hash);
     }
+    # For now register it as a string enum, will change when a register-enum-property multi is made
+    register-enum-property("Canonical_Combining_Class", "0", %seen-ccc);
 
 }
 sub apply-to-cp (Str $range-str, Hash $hashy) {
@@ -258,12 +268,24 @@ sub make-enums {
     my @enums;
     for %enumerated-properties.keys -> $prop {
         my str $enum-str;
+        my $type = %enumerated-properties{$prop}<type>;
         my $rev-hash = reverse-hash(%enumerated-properties{$prop});
         say $rev-hash;
-        for $rev-hash.keys.sort {
-            $enum-str = [~] $enum-str, $indent, Q<">, $rev-hash{$_}, Q<">, ",\n";
+        if $type eq 'Str' {
+            for $rev-hash.keys.sort {
+                $enum-str = [~] $enum-str, $indent, Q<">, $rev-hash{$_}, Q<">, ",\n";
+            }
+            $enum-str = [~] "static char *$prop", "[", $rev-hash.elems, "] = \{\n", $enum-str, "\n\};\n";
         }
-        $enum-str = [~] "static char *$prop", "[", $rev-hash.elems, "] = \{\n", $enum-str, "\n\};\n";
+        elsif $type eq 'Int' {
+            for $rev-hash.keys.sort {
+                $enum-str = [~] $enum-str, $indent, $rev-hash{$_}, ",\n";
+            }
+            $enum-str = [~] "static unsigned int $prop", "[", $rev-hash.elems, "] = \{\n", $enum-str, "\n\};\n";
+        }
+        else {
+            die "Don't know how to make an enum of type '$type'";
+        }
         @enums.push($enum-str);
         #for %enumerated-properties{$prop}.values.sort -> $value {
         #    say $value
@@ -286,12 +308,12 @@ sub make-bitfield-rows {
         $i++;
         $header = nqp::concat($header,"    unsigned int $bin :1;\n");
     }
-    for %enumerated-properties.keys.sort -> $bin {
-        %prop-to-code{$bin} = $i;
-        %code-to-prop{$i} = $bin;
+    for %enumerated-properties.keys.sort -> $property {
+        %prop-to-code{$property} = $i;
+        %code-to-prop{$i} = $property;
         $i++;
-        my $bitwidth = %enumerated-properties{$bin}<bitwidth>;
-        $header = nqp::concat($header, "    unsigned int $bin :$bitwidth;\n");
+        my $bitwidth = %enumerated-properties{$property}<bitwidth>;
+        $header = nqp::concat($header, "    unsigned int $property :$bitwidth;\n");
     }
     #say %enumerated-properties.perl;
     #exit;
@@ -312,7 +334,8 @@ sub make-bitfield-rows {
                     nqp::push_i(@props, %points{$point}{$prop} ?? 1 !! 0);
                 }
                 elsif %enumerated-properties{$prop}:exists {
-                    nqp::push_i(@props, %points{$point}{$prop});
+                    my $enum-int := %enumerated-properties{$prop}{ %points{$point}{$prop} };
+                    nqp::push_i(@props, $enum-int);
                 }
                 else {
                     die;
