@@ -93,7 +93,6 @@ sub DerivedNumericValues ( Str $filename ) {
         %denominator-seen{$denominator} = True;
         my %point = 'Numeric_Value_Numerator' => $numerator.Int, 'Numeric_Value_Denominator' => $denominator.Int;
         apply-to-cp($cp, %point);
-
     }
     register-enum-property('Numeric_Value_Denominator', 0, %denominator-seen);
     register-enum-property('Numeric_Value_Numerator', 0, %numerator-seen);
@@ -108,7 +107,6 @@ sub binary-property ( Int $column, Str $filename ) {
         my $range = @parts[0];
         my %point;
         %point{$property} = True;
-        #say "Range: $range Property: $property";
         apply-to-cp($range, %point);
     }
     register-binary-property(%props-seen.keys.sort);
@@ -138,7 +136,7 @@ sub register-binary-property (+@names) {
     for @names -> $name {
         die if $name !~~ Str;
         note "Registering binary property $name";
-        if %binary-properties{$name}.defined {
+        if %binary-properties{$name}:exists {
             note "Tried to add $name but binary property already exists";
         }
         %binary-properties{$name} = name => $name, bitwidth => 1;
@@ -159,12 +157,9 @@ sub register-enum-property (Str $propname, $negname, %seen-values) {
     if $type eq 'Str' {
         %enum{$negname} = $number++;
         %seen-values{$negname}:delete;
-        say Dump %enum;
-        say Dump %seen-values;
         for %seen-values.keys.sort {
             %enum{$_} = $number++;
         }
-        say Dump %enum;
     }
     elsif $type eq 'Int' {
         for %seen-values.keys.sort({$^a.Int cmp $^b.Int}) {
@@ -177,7 +172,6 @@ sub register-enum-property (Str $propname, $negname, %seen-values) {
     die "Don't see any 0 value for the enum, neg should be $negname" unless any(%enum.values) == 0;
     my Int $max = $number - 1;
     say %enum.perl;
-    #exit;
     %enumerated-properties{$propname} = %enum;
     %enumerated-properties{$propname}<name> = $propname;
     %enumerated-properties{$propname}<bitwidth> = compute-bitwidth($max);
@@ -189,7 +183,7 @@ sub tweak_nfg_qc {
     note "Tweaking NFG_QC…";
     # See http://www.unicode.org/reports/tr29/tr29-27.html#Grapheme_Cluster_Boundary_Rules
     quietly for %points.keys -> $code {
-        die %points{$code}.perl if $code.defined.not;
+        die %points{$code}.perl unless $code.defined;
         # \r
         if ($code == 0x0D) {
             %points{$code}<NFG_QC> = False;
@@ -236,7 +230,6 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
         if ($name eq '<control>' ) {
             $name = sprintf '<control-%.4X>', $cp;
         }
-        #return if $cp > 1000;
         my %hash;
         %hash<Unicode_1_Name>            =? $u1name;
         %hash<name>                      =? $name;
@@ -274,7 +267,7 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
 }
 sub apply-to-cp (Str $range-str, Hash $hashy) {
     my $range;
-    # If it contains .. then it is a range
+    # If it contains `..` then it is a range
     if $range-str.match(/ ^ ( <:AHex>+ ) '..' ( <:AHex>+ ) $ /) {
         $range = Range.new: :16(~$0), :16(~$1);
         for $range.lazy -> $cp {
@@ -291,7 +284,6 @@ sub apply-to-cp (Str $range-str, Hash $hashy) {
 
 }
 sub apply-to-points (Int $cp, Hash $hashy) {
-    state $lock = Lock.new;
     for $hashy.keys -> $key {
         if !defined %points{$cp}{$key} {
             %points{$cp}{$key} = $hashy{$key};
@@ -299,8 +291,6 @@ sub apply-to-points (Int $cp, Hash $hashy) {
         else {
             for $hashy{$key}.keys -> $key2 {
                 if !defined %points{$cp}{$key}{$key2} {
-                    #say sprintf "U+%X key: %s key2 %s", $cp, $key, $key2;
-                    #say Dump $hashy;
                     given $key2.WHAT.^name {
                         when 'Int' {
                             %points{$cp}{$key} = $hashy{$key};
@@ -312,8 +302,6 @@ sub apply-to-points (Int $cp, Hash $hashy) {
                             die "Don't know how to apply type $_ in apply-to-points";
                         }
                     }
-
-                    #%points{$cp}{$key}{$key2} = $hashy{$key}{$key2};
                 }
                 else {
                     die "This level of hash NYI";
@@ -342,15 +330,12 @@ sub make-enums (:$debug, :%enumerated-properties) {
                 $enum-str = ($enum-str, $indent, $rev-hash{$_}, ",\n").join;
             }
             say Dump $rev-hash if $debug-global;
-            $enum-str = [~] compute-type($rev-hash.values.».Int.max, $rev-hash.values.».Int.min ), " $prop", "[", $rev-hash.elems, "] = \{\n", $enum-str, "\n\};\n";
+            $enum-str = (compute-type($rev-hash.values.».Int.max, $rev-hash.values.».Int.min ), " $prop", "[", $rev-hash.elems, "] = \{\n", $enum-str, "\n\};\n").join;
         }
         else {
             die "Don't know how to make an enum of type '$type'";
         }
         @enums.push($enum-str);
-        #for %enumerated-properties{$prop}.values.sort -> $value {
-        #    say $value
-        #}
     }
     @enums.join("\n");
 }
@@ -402,8 +387,6 @@ sub make-bitfield-rows {
         my $bitwidth = %enumerated-properties{$property}<bitwidth>;
         $header = nqp::concat($header, "    unsigned int $property :$bitwidth;\n");
     }
-    #say %enumerated-properties.perl;
-    #exit;
     $header = nqp::concat($header, "\};\n");
     $header = nqp::concat($header, "typedef struct binary_prop_bitfield binary_prop_bitfield;\n");
     my @bitfield-rows;
@@ -411,11 +394,9 @@ sub make-bitfield-rows {
     my @code-to-prop-keys = %code-to-prop.keys.sort(+*);
     my $t1 = now;
     quietly for %points.keys.sort(+*) -> $point {
-        #say $point;
         my int @bitfield-columns;
         for @code-to-prop-keys -> $propcode {
             my $prop = %code-to-prop{$propcode};
-            #say "$propcode $prop";
             if %points{$point}{$prop}:exists {
                 if %binary-properties{$prop}:exists {
                     nqp::push_i(@bitfield-columns, %points{$point}{$prop} ?? 1 !! 0);
@@ -446,7 +427,6 @@ sub make-bitfield-rows {
         # If we've already seen an identical row
         if %bitfield-rows-seen{$bitfield-rows-str}:exists {
             nqp::bindkey(%point-index, nqp::unbox_s($point), nqp::base_I(nqp::decont(%bitfield-rows-seen{$bitfield-rows-str}), 10));
-            #%point-index{$point} = $bin-index;
         }
         else {
             %bitfield-rows-seen{$bitfield-rows-str} = ++$bin-index;
@@ -476,9 +456,9 @@ sub make-bitfield-rows {
 sub dump-json ( Bool $dump ) {
     note "Converting data to JSON...";
     if $dump {
-        spurt %points.VAR.name ~ ".json", to-json(%points);
-        spurt "decomp_spec.json", to-json(%decomp_spec);
+        spurt %points.VAR.name ~ '.json', to-json(%points);
+        spurt %decomp_spec.VAR.name ~ '.json', to-json(%decomp_spec);
     }
-    spurt "enumerated-property.json", to-json(%enumerated-properties);
-    spurt "binary-properties.json", to-json(%binary-properties);
+    spurt %enumerated-properties.VAR.name ~ '.json', to-json(%enumerated-properties);
+    spurt %binary-properties.VAR.name ~ '.json', to-json(%binary-properties);
 }
