@@ -46,6 +46,14 @@ sub compute-type ( Int $max, Int $min = 0 ) is export {
         die "Size is $size. Not sure what to do";
     }
 }
+sub circumfix:<⟅ ⟆>(*@array) returns str is export {
+    @array.join('');
+}
+multi sub prefix:< ¿ > ( Str $str ) is export { $str.defined and $str ne '' ?? True !! False }
+multi sub prefix:< ¿ > ( Bool $bool ) { $bool.defined and $bool != False }
+
+sub infix:< =? > ($left is rw, $right) is export { $left = $right if ¿$right }
+sub infix:< ?= > ($left is rw, $right) is export { $left = $right if ¿$left }
 #`{{
 sub NYI {
 our %sizes =

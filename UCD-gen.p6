@@ -16,16 +16,13 @@ my %point-index = nqp::hash;
 my $debug-global = False;
 my int $bin-index = -1;
 my $indent = "\c[SPACE]" x 4;
-sub circumfix:<⟅ ⟆>(*@array) returns str {
-    @array.join('');
-}
 sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, :$debug = False ) {
     $debug-global = $debug;
     chdir "..";
 
     UnicodeData("UnicodeData", $less);
     enumerated-property(1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
-    #enumerated-property(1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType');
+    enumerated-property(1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType');
     unless $less {
         DerivedNumericValues('extracted/DerivedNumericValues');
         enumerated-property(1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth');
@@ -66,7 +63,7 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, :$debug =
         }
 
         END2
-        my $bitfield_c = ⟅make-enums(), make-bitfield-rows(), make-point-index(), $var⟆;
+        my $bitfield_c = (make-enums(), make-bitfield-rows(), make-point-index(), $var).join('');
         note "Saving bitfield.c…";
         spurt "bitfield.c", $bitfield_c;
     }
@@ -213,11 +210,6 @@ sub slurp-lines ( Str $filename ) returns Seq {
     note "Reading $filename.txt…";
     "$folder/$filename.txt".IO.slurp.lines orelse die;
 }
-multi sub prefix:< ¿ > ( Str $str ) { $str.defined and $str ne '' ?? True !! False }
-multi sub prefix:< ¿ > ( Bool $bool ) { $bool.defined and $bool != False }
-
-sub infix:< =? > ($left is rw, $right) { $left = $right if ¿$right }
-sub infix:< ?= > ($left is rw, $right) { $left = $right if ¿$left }
 sub skip-line ( Str $line ) {
     $line.starts-with('#') or $line.match(/^\s*$/) ?? True !! False;
 }
