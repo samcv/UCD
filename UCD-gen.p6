@@ -63,7 +63,7 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, :$debug =
         }
 
         END2
-        my $bitfield_c = (make-enums(), make-bitfield-rows(), make-point-index(), $var).join('');
+        my $bitfield_c = (make-enums(), make-bitfield-rows(), make-point-index(), $var).join;
         note "Saving bitfield.c…";
         spurt "bitfield.c", $bitfield_c;
     }
@@ -333,13 +333,13 @@ sub make-enums (:$debug, :%enumerated-properties) {
         say $rev-hash if $debug;
         if $type eq 'Str' {
             for $rev-hash.keys.sort {
-                $enum-str = [~] $enum-str, $indent, Q<">, $rev-hash{$_}, Q<">, ",\n";
+                $enum-str = ($enum-str, $indent, Q<">, $rev-hash{$_}, qq[",\n]).join;
             }
-            $enum-str = [~] "static char *$prop", "[", $rev-hash.elems, "] = \{\n", $enum-str, "\n\};\n";
+            $enum-str = ("static char *$prop", "[", $rev-hash.elems, "] = \{\n", $enum-str, "\n\};\n").join;
         }
         elsif $type eq 'Int' {
             for $rev-hash.keys.sort {
-                $enum-str = [~] $enum-str, $indent, $rev-hash{$_}, ",\n";
+                $enum-str = ($enum-str, $indent, $rev-hash{$_}, ",\n").join;
             }
             say Dump $rev-hash if $debug-global;
             $enum-str = [~] compute-type($rev-hash.values.».Int.max, $rev-hash.values.».Int.min ), " $prop", "[", $rev-hash.elems, "] = \{\n", $enum-str, "\n\};\n";
@@ -378,7 +378,7 @@ sub make-point-index (:$less) {
     #for ^nqp::elems($mapping) {
     #    nqp
     #$mapping := nqp::list_s;
-    my $mapping-str = ("#define max_bitfield_index $point-max\nstatic $type point_index[", $point-max + 1, "] = \{\n    ", $string, "\n\};\n").join('');
+    my $mapping-str = ("#define max_bitfield_index $point-max\nstatic $type point_index[", $point-max + 1, "] = \{\n    ", $string, "\n\};\n").join;
     $mapping-str;
 }
 sub make-bitfield-rows {
@@ -442,7 +442,7 @@ sub make-bitfield-rows {
                 nqp::push_i(@bitfield-columns,0);
             }
         }
-        my $bitfield-rows-str =  ('    {', @bitfield-columns.join(","), '},').join('');
+        my $bitfield-rows-str =  ('    {', @bitfield-columns.join(","), '},').join;
         # If we've already seen an identical row
         if %bitfield-rows-seen{$bitfield-rows-str}:exists {
             nqp::bindkey(%point-index, nqp::unbox_s($point), nqp::base_I(nqp::decont(%bitfield-rows-seen{$bitfield-rows-str}), 10));
