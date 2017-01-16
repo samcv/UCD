@@ -171,7 +171,6 @@ sub register-enum-property (Str $propname, $negname, %seen-values) {
     }
     die "Don't see any 0 value for the enum, neg should be $negname" unless any(%enum.values) == 0;
     my Int $max = $number - 1;
-    say %enum.perl;
     %enumerated-properties{$propname} = %enum;
     %enumerated-properties{$propname}<name> = $propname;
     %enumerated-properties{$propname}<bitwidth> = compute-bitwidth($max);
@@ -389,7 +388,7 @@ sub make-bitfield-rows {
     }
     $header = nqp::concat($header, "\};\n");
     $header = nqp::concat($header, "typedef struct binary_prop_bitfield binary_prop_bitfield;\n");
-    my @bitfield-rows;
+    my $bitfield-rows := nqp::list_s;
     my %bitfield-rows-seen;
     my @code-to-prop-keys = %code-to-prop.keys.sort(+*);
     my $t1 = now;
@@ -437,9 +436,9 @@ sub make-bitfield-rows {
     my $t2 = now;
     say "Finished computing all rows, took {now - $t1}. Now creating the final unduplicated version.";
     for %bitfield-rows-seen.sort(+*.value).».kv -> ($row-str, $index) {
-        @bitfield-rows.push($row-str ~ "/* index $index */");
+        nqp::push_s($bitfield-rows, nqp::concat($row-str, "/* index $index */"));
     }
-    $binary-struct-str = @bitfield-rows.join("\n");
+    $binary-struct-str = nqp::join("\n", $bitfield-rows);
     my @array;
     push @array, $header;
     push @array, qq:to/END/;
@@ -449,7 +448,6 @@ sub make-bitfield-rows {
         \};
     END
     say "Took {now - $t2} seconds to join all the seen bitfield rows";
-    #push @array, $binary-struct-str;
     return @array.join("\n");
 }
 
