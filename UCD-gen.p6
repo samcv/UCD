@@ -420,20 +420,19 @@ sub make-bitfield-rows {
                 nqp::push_s($bitfield-columns, '0');
             }
         }
-        my str $bitfield-rows-str =  ('    {', nqp::join(',', $bitfield-columns), '},').join;
+        my str $bitfield-rows-str = nqp::join('', nqp::list_s('    {', nqp::join(',', $bitfield-columns), '},'));
         # If we've already seen an identical row
-        if nqp::existskey(%bitfield-rows-seen, $bitfield-rows-str) {
-            my str $atkey = nqp::atkey(%bitfield-rows-seen, $bitfield-rows-str);
-            nqp::bindkey(%point-index, nqp::unbox_s($point), $atkey);
-        }
-        # If we haven't seen this row before
-        else {
+        nqp::if(nqp::existskey(%bitfield-rows-seen, $bitfield-rows-str), (
+            nqp::bindkey(%point-index, nqp::unbox_s($point), nqp::atkey(%bitfield-rows-seen, $bitfield-rows-str))
+        ),
+        (
             my str $bin-index_s = nqp::base_I(++$bin-index, 10);
             # Bind it to the bitfield rows hash
             nqp::bindkey(%bitfield-rows-seen, $bitfield-rows-str, $bin-index_s);
             # Bind the point index so we know where in the bitfield this point is located
             nqp::bindkey(%point-index, nqp::unbox_s($point), $bin-index_s);
-        }
+        )
+        );
 
     }
     my $t2 = now;
