@@ -4,7 +4,8 @@ use Data::Dump;
 use lib 'lib';
 use UCDlib;
 INIT say "Initializing…";
-my Str $folder = "UNIDATA";
+my Str $UNIDATA-folder = "UNIDATA";
+my Str $build-folder = "build";
 my %points;
 my %binary-properties;
 my %enumerated-properties;
@@ -18,13 +19,10 @@ my int $bin-index = -1;
 my $indent = "\c[SPACE]" x 4;
 sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, :$debug = False ) {
     $debug-global = $debug;
-    chdir "..";
-
+    enumerated-property(1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType');
     UnicodeData("UnicodeData", $less);
     enumerated-property(1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
-    enumerated-property(1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType');
     unless $less {
-        DerivedNumericValues('extracted/DerivedNumericValues');
         enumerated-property(1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth');
         enumerated-property(1, 'N', 'East_Asian_Width', 'EastAsianWidth');
         enumerated-property(1, '', 'Jamo_Short_Name', 'Jamo');
@@ -65,7 +63,7 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, :$debug =
         END2
         my $bitfield_c = (make-enums(), make-bitfield-rows(), make-point-index(), $var).join;
         note "Saving bitfield.c…";
-        spurt "bitfield.c", $bitfield_c;
+        spurt "$build-folder/bitfield.c", $bitfield_c;
     }
     say "Took {now - INIT now} seconds.";
 }
@@ -151,6 +149,7 @@ sub register-enum-property (Str $propname, $negname, %seen-values) {
     my %enum;
     my $type = $negname.WHAT.^name;
     note "Registering type $type enum property $propname";
+    say Dump %seen-values if $debug-global;
     # Start the enum values at 0
     my Int $number = 0;
     # Our false name we got should be number 0, and will be different depending on the category
@@ -172,6 +171,7 @@ sub register-enum-property (Str $propname, $negname, %seen-values) {
     die "Don't see any 0 value for the enum, neg should be $negname" unless any(%enum.values) == 0;
     my Int $max = $number - 1;
     %enumerated-properties{$propname} = %enum;
+    say Dump %enumerated-properties;
     %enumerated-properties{$propname}<name> = $propname;
     %enumerated-properties{$propname}<bitwidth> = compute-bitwidth($max);
     %enumerated-properties{$propname}<type> = $type;
@@ -201,7 +201,7 @@ sub tweak_nfg_qc {
 }
 sub slurp-lines ( Str $filename ) returns Seq {
     note "Reading $filename.txt…";
-    "$folder/$filename.txt".IO.slurp.lines orelse die;
+    "$UNIDATA-folder/$filename.txt".IO.slurp.lines orelse die;
 }
 sub skip-line ( Str $line ) {
     $line.starts-with('#') or $line.match(/^\s*$/) ?? True !! False;
@@ -310,14 +310,15 @@ sub apply-to-points (Int $cp, Hash $hashy) {
     }
 }
 
-sub make-enums (:$debug, :%enumerated-properties) {
+sub make-enums {
     note "Making enums…";
     my @enums;
+    say Dump %enumerated-properties if $debug-global;
     for %enumerated-properties.keys -> $prop {
         my str $enum-str;
         my $type = %enumerated-properties{$prop}<type>;
         my $rev-hash = reverse-hash-int-only(%enumerated-properties{$prop});
-        say $rev-hash if $debug;
+        say $rev-hash if $debug-global;
         if $type eq 'Str' {
             for $rev-hash.keys.sort {
                 $enum-str = ($enum-str, $indent, Q<">, $rev-hash{$_}, qq[",\n]).join;
@@ -357,11 +358,8 @@ sub make-point-index (:$less) {
         );
     }
     my $t1 = now;
-    my str $string = nqp::join(',', $mapping);
+    my str $string = nqp::join(",\n", $mapping);
     say now - $t1 ~ "Took this long to concat points";
-    #for ^nqp::elems($mapping) {
-    #    nqp
-    #$mapping := nqp::list_s;
     my $mapping-str = ("#define max_bitfield_index $point-max\nstatic $type point_index[", $point-max + 1, "] = \{\n    ", $string, "\n\};\n").join;
     $mapping-str;
 }
@@ -397,13 +395,13 @@ sub make-bitfield-rows {
         for @code-to-prop-keys -> $propcode {
             my $prop = %code-to-prop{$propcode};
             if %points{$point}{$prop}:exists {
-                if %binary-properties{$prop}:exists {
+                if nqp::existskey(%binary-properties, $prop) {
                     nqp::push_i(@bitfield-columns, %points{$point}{$prop} ?? 1 !! 0);
                 }
-                elsif %enumerated-properties{$prop}:exists {
+                elsif nqp::existskey(%enumerated-properties, $prop) {
                     my $enum := %points{$point}{$prop};
                     # If the key exists we need to look up the value
-                    if %enumerated-properties{$prop}{ $enum }:exists {
+                    if %enumerated-properties{$prop}{$enum}:exists {
                         $enum := %enumerated-properties{$prop}{ $enum };
                         nqp::push_i(@bitfield-columns, $enum);
                     }
@@ -454,9 +452,9 @@ sub make-bitfield-rows {
 sub dump-json ( Bool $dump ) {
     note "Converting data to JSON...";
     if $dump {
-        spurt %points.VAR.name ~ '.json', to-json(%points);
-        spurt %decomp_spec.VAR.name ~ '.json', to-json(%decomp_spec);
+        spurt $build-folder ~ %points.VAR.name ~ '.json', to-json(%points);
+        spurt $build-folder ~ %decomp_spec.VAR.name ~ '.json', to-json(%decomp_spec);
     }
-    spurt %enumerated-properties.VAR.name ~ '.json', to-json(%enumerated-properties);
-    spurt %binary-properties.VAR.name ~ '.json', to-json(%binary-properties);
+    spurt $build-folder ~ %enumerated-properties.VAR.name ~ '.json', to-json(%enumerated-properties);
+    spurt $build-folder ~ %binary-properties.VAR.name ~ '.json', to-json(%binary-properties);
 }
