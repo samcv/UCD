@@ -391,25 +391,25 @@ sub make-bitfield-rows {
     my @code-to-prop-keys = %code-to-prop.keys.sort(+*);
     my $t1 = now;
     quietly for %points.keys.sort(+*) -> $point {
-        my int @bitfield-columns;
+        my $bitfield-columns := nqp::list_s;
         for @code-to-prop-keys -> $propcode {
             my $prop = %code-to-prop{$propcode};
             if %points{$point}{$prop}:exists {
                 if nqp::existskey(%binary-properties, $prop) {
-                    nqp::push_i(@bitfield-columns, %points{$point}{$prop} ?? 1 !! 0);
+                    nqp::push_s($bitfield-columns, nqp::unbox_s(%points{$point}{$prop} ?? '1' !! '0'));
                 }
                 elsif nqp::existskey(%enumerated-properties, $prop) {
                     my $enum := %points{$point}{$prop};
                     # If the key exists we need to look up the value
                     if %enumerated-properties{$prop}{$enum}:exists {
                         $enum := %enumerated-properties{$prop}{ $enum };
-                        nqp::push_i(@bitfield-columns, $enum);
+                        nqp::push_s($bitfield-columns, nqp::base_I(nqp::decont($enum),10));
                     }
                     # If it doesn't exist it's an Int property. Eventually we should try and look
                     # up the enum type in the hash
                     # XXX make it so we have consistent functionality for Int and non Int enums
                     else {
-                        nqp::push_i(@bitfield-columns, $enum);
+                        nqp::push_s($bitfield-columns, nqp::base_I(nqp::decont($enum),10));
                     }
                 }
                 else {
@@ -417,10 +417,10 @@ sub make-bitfield-rows {
                 }
             }
             else {
-                nqp::push_i(@bitfield-columns,0);
+                nqp::push_s($bitfield-columns, '0');
             }
         }
-        my $bitfield-rows-str =  ('    {', @bitfield-columns.join(","), '},').join;
+        my $bitfield-rows-str =  ('    {', nqp::join(',', $bitfield-columns), '},').join;
         # If we've already seen an identical row
         if %bitfield-rows-seen{$bitfield-rows-str}:exists {
             nqp::bindkey(%point-index, nqp::unbox_s($point), nqp::base_I(nqp::decont(%bitfield-rows-seen{$bitfield-rows-str}), 10));
