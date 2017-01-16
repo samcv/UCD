@@ -5,35 +5,34 @@ use lib 'lib';
 use UCDlib;
 INIT say "Initializing…";
 my Str $folder = "UNIDATA";
-my %points{Int};
+my %points;
 my %binary-properties;
 my %enumerated-properties;
 my %all-properties;
 my %decomp_spec;
 my %point-to-struct;
 my %bitfields;
+my %point-index;
 my $indent = "\c[SPACE]" x 4;
 sub circumfix:<⟅ ⟆>(*@array) returns str {
-    my $str := @array.shift;
-    for @array {
-        $str := nqp::concat($str, $_);
-    }
-    $str;
+    @array.join('');
 }
-sub MAIN ( Bool :$dump = False, Bool :$make = False ) {
+sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Bool :$less = False ) {
     chdir "..";
-    #binary-property(1, 'emoji/emoji-data');
-    #binary-property(1, 'DerivedCoreProperties');
-    #enumerated-property(1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType');
-    # Not needed, in UnicodeData ?
-    # Also we don't account for this case where we try and add a property that already exists
-    #binary-property(1, 'extracted/DerivedBinaryProperties');
-    #enumerated-property(1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
-    UnicodeData("UnicodeData");
-    #NameAlias("NameAlias", "NameAliases" );
+    UnicodeData("UnicodeData", $less);
+    enumerated-property(1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType');
+    unless $less {
+        binary-property(1, 'emoji/emoji-data');
+        binary-property(1, 'DerivedCoreProperties');
+        # Not needed, in UnicodeData ?
+        # Also we don't account for this case where we try and add a property that already exists
+        #binary-property(1, 'extracted/DerivedBinaryProperties');
+        enumerated-property(1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
+        #NameAlias("NameAlias", "NameAliases" );
+    }
     #tweak_nfg_qc();
     dump-json($dump);
-    if $make {
+    unless $nomake {
         my $var = q:to/END2/;
         int main (void) {
             unsigned int num = mybitfield[2000].Grapheme_Cluster_Break;
@@ -44,6 +43,7 @@ sub MAIN ( Bool :$dump = False, Bool :$make = False ) {
 
         END2
         my $bitfield_c = ⟅make-enums(), make-bitfield-rows(), $var⟆;
+        note "Saving bitfield.c…";
         spurt "bitfield.c", $bitfield_c;
     }
     say "Took {now - INIT now} seconds.";
@@ -105,21 +105,39 @@ sub compute-bitwidth ( Int $max ) {
 # Eventually we will make a multi that can take ints
 sub register-enum-property (Str $propname, $negname, %seen-values) {
     my %enum;
+    say Dump %seen-values;
+    my $type = $negname.WHAT.^name;
+    note "Registering type $type enum property $propname";
     # Start the enum values at 0
     my Int $number = 0;
     # Our false name we got should be number 0, and will be different depending on the category
-    %enum{$negname} = $number++;
-    for %seen-values.keys.sort {
-        %enum{$_} = $number++;
+    if $type eq 'Str' {
+        say "GOING STRING";
+        %enum{$negname} = $number++;
+        %seen-values{$negname}:delete;
+        say Dump %enum;
+        say Dump %seen-values;
+        for %seen-values.keys.sort {
+            %enum{$_} = $number++;
+        }
+        say Dump %enum;
     }
+    elsif $type eq 'Int' {
+        for %seen-values.keys.sort({$^a.Int cmp $^b.Int}) {
+            %enum{$_} = $number++;
+        }
+    }
+    else {
+        die "Don't know how to register enum property of type '$type'";
+    }
+    die "Don't see any 0 value for the enum, neg should be $negname" unless any(%enum.values) == 0;
     my Int $max = $number - 1;
     say %enum.perl;
     #exit;
-    note "Registering enum property $propname";
     %enumerated-properties{$propname} = %enum;
     %enumerated-properties{$propname}<name> = $propname;
     %enumerated-properties{$propname}<bitwidth> = compute-bitwidth($max);
-    %enumerated-properties{$propname}<type> = $negname.WHAT.^name;
+    %enumerated-properties{$propname}<type> = $type;
     %all-properties{$propname} = %enumerated-properties{$propname};
     return %enum;
 }
@@ -170,7 +188,7 @@ sub NameAlias ( Str $property, Str $file ) {
         apply-to-cp(@parts[0], %hash)
     }
 }
-sub UnicodeData ( Str $file ) {
+sub UnicodeData ( Str $file, Bool $less = False ) {
     register-binary-property(<NFD_QC NFC_QC NFKD_QC NFG_QC Any Bidi_Mirrored>);
     my %seen-ccc;
     for slurp-lines $file {
@@ -180,6 +198,7 @@ sub UnicodeData ( Str $file ) {
             $num1, $num2, $num3, $bidimirrored, $u1name, $isocomment,
             $suc, $slc, $stc) = @parts;
         my $cp = :16($code-str);
+        next if $cp > 1000 and $less;
         if ($name eq '<control>' ) {
             $name = sprintf '<control-%.4X>', $cp;
         }
@@ -191,7 +210,7 @@ sub UnicodeData ( Str $file ) {
         %hash<General_Category>          =? $gencat;
         if $ccclass {
             %seen-ccc{$ccclass} = True unless %seen-ccc{$ccclass}:exists;
-            %hash<Canonical_Combining_Class> = $ccclass;
+            %hash<Canonical_Combining_Class> = $ccclass.Int;
         }
         %hash<Bidi_Class>                =? $bidiclass;
         %hash<suc>     = :16($suc) if ¿$suc;
@@ -216,7 +235,7 @@ sub UnicodeData ( Str $file ) {
         apply-to-cp($code-str, %hash);
     }
     # For now register it as a string enum, will change when a register-enum-property multi is made
-    register-enum-property("Canonical_Combining_Class", "0", %seen-ccc);
+    register-enum-property("Canonical_Combining_Class", 0, %seen-ccc);
 
 }
 sub apply-to-cp (Str $range-str, Hash $hashy) {
@@ -297,7 +316,6 @@ sub make-bitfield-rows {
     note "Making bitfield-rows…";
     my %code-to-prop{Int};
     my %prop-to-code;
-    my str @bitfield-rows;
     my Int $i = 0;
     my str $binary-struct-str;
     # Create the order of the struct
@@ -319,42 +337,87 @@ sub make-bitfield-rows {
     #exit;
     $header = nqp::concat($header, "\};\n");
     $header = nqp::concat($header, "typedef struct binary_prop_bitfield binary_prop_bitfield;\n");
-    my Int $bin-index = 0;
+    my Int $bin-index = -1;
     my str $begin-line = '    {';
     my str $begin-line_2 = "\},/* ";
     my str $end-line = "*/";
-    for %points.keys.sort.lazy -> $point {
-        die if $point !~~ Int;
-        my int @props;
+    my @bitfield-rows;
+    my %bitfield-rows-seen;
+    quietly for %points.keys.sort(+*) -> $point {
+        say $point;
+        my int @bitfield-columns;
         for %code-to-prop.keys.sort -> $propcode {
             my $prop = %code-to-prop{$propcode};
             #say "$propcode $prop";
             if %points{$point}{$prop}:exists {
                 if %binary-properties{$prop}:exists {
-                    nqp::push_i(@props, %points{$point}{$prop} ?? 1 !! 0);
+                    nqp::push_i(@bitfield-columns, %points{$point}{$prop} ?? 1 !! 0);
                 }
                 elsif %enumerated-properties{$prop}:exists {
-                    my $enum-int := %enumerated-properties{$prop}{ %points{$point}{$prop} };
-                    nqp::push_i(@props, $enum-int);
+                    my $enum := %points{$point}{$prop};
+                    # If the key exists we need to look up the value
+                    if %enumerated-properties{$prop}{ $enum }:exists {
+                        $enum := %enumerated-properties{$prop}{ $enum };
+                        nqp::push_i(@bitfield-columns, $enum);
+                    }
+                    # If it doesn't exist it's an Int property. Eventually we should try and look
+                    # up the enum type in the hash
+                    # XXX make it so we have consistent functionality for Int and non Int enums
+                    else {
+                        nqp::push_i(@bitfield-columns, $enum);
+                    }
                 }
                 else {
                     die;
                 }
             }
             else {
-                @props.push(0);
+                nqp::push_i(@bitfield-columns,0);
             }
         }
-        #push %bitfields<binary_prop_bitfield>, @props;
+        my str $bitfield-rows-str =  ⟅'    {', @bitfield-columns.join(","), '},'⟆;
+        # If we've already seen an identical row
+        if %bitfield-rows-seen{$bitfield-rows-str}:exists {
+            %point-index{$point} = %bitfield-rows-seen{$bitfield-rows-str};
+            #%point-index{$point} = $bin-index;
+        }
+        else {
+            %bitfield-rows-seen{$bitfield-rows-str} = ++$bin-index;
+            %point-index{$point} = $bin-index;
+        }
+        #push %bitfields<binary_prop_bitfield>, @bitfield-columns;
         # the ~ operator is really slow… so let's use some nqp ops
-        my str @array = $begin-line, nqp::unbox_s(@props.join(',')),  $begin-line_2, nqp::unbox_s($point.Str), $end-line;
-        my str $line = @array.join('');
-        nqp::push_s(@bitfield-rows, $line);
-        # If we matched ANY of the binary properties, increment the index by one
-        # and set this points index for binary props
+        #my str @array = $begin-line, nqp::unbox_s(@bitfield-columns.join(',')),  $begin-line_2, nqp::unbox_s($point.Str), nqp::unbox_s("index: $bin-index"), $end-line;
+        #my str $line = @array.join('');
+        # If they are the same, don't push it, and don't increase the index
 
-        %points{$point}<index><binary> = $bin-index++;
+        #say %point-index.perl;
+        #say %bitfield-rows-seen.perl;
+        #`{{
+        if @bitfield-rows[.end] eqv @bitfield-columns {
+            say "it's the same";
+            %points{$point}<index><binary> = $bin-index;
+            %point-index{$point} = $bin-index;
+            #say %point-index;
+        }
+        else {
+            say @bitfield-rows[.end].perl;
+            say @bitfield-columns.perl;
+            # If we matched ANY of the binary properties, increment the index by one
+            # and set this points index for binary props
+            $bin-index++;
+            #%points{$point}<index><binary> = $bin-index;
+            #%point-index{$point} = $bin-index;
+            @bitfield-rows.push(@bitfield-columns);
+        }
+        }}
 
+
+    }
+    say %bitfield-rows-seen;
+    for %bitfield-rows-seen.sort(*.key)>>.kv -> ($row-str, $index) {
+        say "row-str $row-str index $index";
+        @bitfield-rows.push($row-str ~ "/* index $index */");
     }
     $binary-struct-str = @bitfield-rows.join("\n");
     $binary-struct-str ~~ s/','$//;
@@ -363,7 +426,7 @@ sub make-bitfield-rows {
     push @array, qq:to/END/;
     #include <stdio.h>
     static const binary_prop_bitfield mybitfield[$bin-index] = \{
-        $binary-struct-str
+    $binary-struct-str
         \};
     END
     #push @array, $binary-struct-str;
