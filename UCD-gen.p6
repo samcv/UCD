@@ -171,7 +171,7 @@ sub register-enum-property (Str $propname, $negname, %seen-values) {
     die "Don't see any 0 value for the enum, neg should be $negname" unless any(%enum.values) == 0;
     my Int $max = $number - 1;
     %enumerated-properties{$propname} = %enum;
-    say Dump %enumerated-properties;
+    say Dump %enumerated-properties if $debug-global;
     %enumerated-properties{$propname}<name> = $propname;
     %enumerated-properties{$propname}<bitwidth> = compute-bitwidth($max);
     %enumerated-properties{$propname}<type> = $type;
@@ -387,7 +387,7 @@ sub make-bitfield-rows {
     $header = nqp::concat($header, "\};\n");
     $header = nqp::concat($header, "typedef struct binary_prop_bitfield binary_prop_bitfield;\n");
     my $bitfield-rows := nqp::list_s;
-    my %bitfield-rows-seen;
+    my %bitfield-rows-seen = nqp::hash;
     my @code-to-prop-keys = %code-to-prop.keys.sort(+*);
     my $t1 = now;
     quietly for %points.keys.sort(+*) -> $point {
@@ -420,13 +420,16 @@ sub make-bitfield-rows {
                 nqp::push_s($bitfield-columns, '0');
             }
         }
-        my $bitfield-rows-str =  ('    {', nqp::join(',', $bitfield-columns), '},').join;
+        my str $bitfield-rows-str =  ('    {', nqp::join(',', $bitfield-columns), '},').join;
         # If we've already seen an identical row
-        if %bitfield-rows-seen{$bitfield-rows-str}:exists {
+        if nqp::existskey(%bitfield-rows-seen, $bitfield-rows-str) {
             nqp::bindkey(%point-index, nqp::unbox_s($point), nqp::base_I(nqp::decont(%bitfield-rows-seen{$bitfield-rows-str}), 10));
         }
+        # If we haven't seen this row before
         else {
-            %bitfield-rows-seen{$bitfield-rows-str} = ++$bin-index;
+            # Bind it to the bitfield rows hash
+            nqp::bindkey(%bitfield-rows-seen, $bitfield-rows-str, ++$bin-index);
+            # Bind the point index so we know where in the bitfield this point is located
             nqp::bindkey(%point-index, nqp::unbox_s($point), nqp::base_I(nqp::decont($bin-index),10));
         }
 
