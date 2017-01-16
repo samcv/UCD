@@ -20,14 +20,14 @@ sub circumfix:<⟅ ⟆>(*@array) returns str {
 sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Bool :$less = False ) {
     chdir "..";
     UnicodeData("UnicodeData", $less);
+    enumerated-property(1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
     enumerated-property(1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType');
     unless $less {
         binary-property(1, 'emoji/emoji-data');
         binary-property(1, 'DerivedCoreProperties');
         # Not needed, in UnicodeData ?
         # Also we don't account for this case where we try and add a property that already exists
-        #binary-property(1, 'extracted/DerivedBinaryProperties');
-        enumerated-property(1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
+        binary-property(1, 'extracted/DerivedBinaryProperties');
         #NameAlias("NameAlias", "NameAliases" );
     }
     #tweak_nfg_qc();
@@ -35,14 +35,21 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Bool :$less = False ) {
     unless $nomake {
         my $var = q:to/END2/;
         int main (void) {
-            unsigned int num = mybitfield[2000].Grapheme_Cluster_Break;
+            unsigned int cp = 0x30;
+            int index = point_index[cp];
+            if ( index < 0 ) {
+                return 1;
+            }
+            printf("Index: %i", index);
+            unsigned int num = mybitfield[index].Grapheme_Cluster_Break;
+            printf("GCB enum %i\n", num);
             char * str = Grapheme_Cluster_Break[num];
-            printf("2000 GCB = %s %i\n", str, num);
-            printf("U+0000 Bidi_Mirrored: %i NFG_QC: %i\n", mybitfield[0].Bidi_Mirrored, mybitfield[0].NFG_QC);
+            printf("GCB = %s\n", str);
+            printf("U+%X Bidi_Mirrored: %i\n", cp, mybitfield[index].Bidi_Mirrored );
         }
 
         END2
-        my $bitfield_c = ⟅make-enums(), make-bitfield-rows(), $var⟆;
+        my $bitfield_c = ⟅make-enums(), make-bitfield-rows(), make-point-index(), $var⟆;
         note "Saving bitfield.c…";
         spurt "bitfield.c", $bitfield_c;
     }
@@ -265,7 +272,20 @@ sub apply-to-points (Int $cp, Hash $hashy) {
         else {
             for $hashy{$key}.keys -> $key2 {
                 if !defined %points{$cp}{$key}{$key2} {
-                    %points{$cp}{$key}{$key2} = $hashy{$key}{$key2};
+                    say "key: $key key2 $key2";
+                    given $key2.WHAT.^name {
+                        when 'Int' {
+                            %points{$cp}{$key} = $key2;
+                        }
+                        when 'Bool' {
+                            %points{$cp}{$key} = $key2;
+                        }
+                        default {
+                            die "Don't know how to apply type $_ in apply-to-points";
+                        }
+                    }
+
+                    #%points{$cp}{$key}{$key2} = $hashy{$key}{$key2};
                 }
                 else {
                     die "This level of hash NYI";
@@ -312,6 +332,21 @@ sub make-enums {
     }
     @enums.join("\n");
 }
+sub make-point-index {
+    my $point-max = %point-index.keys.max;
+    my $binary-max = $point-max.Int.base(2).chars;
+    my int @mapping;
+    for 0…$point-max -> $point {
+        if %point-index{$point}:exists {
+            nqp::push_i(@mapping, %point-index{$point});
+        }
+        else {
+            nqp::push_i(@mapping, -1); # -1 represents NULL
+        }
+    }
+    my $mapping-str = ⟅"static unsigned int point_index[", $point-max + 1, "] = \{\n    ", @mapping.join(",\n    "), "\n\};\n"⟆;
+    $mapping-str;
+}
 sub make-bitfield-rows {
     note "Making bitfield-rows…";
     my %code-to-prop{Int};
@@ -344,7 +379,7 @@ sub make-bitfield-rows {
     my @bitfield-rows;
     my %bitfield-rows-seen;
     quietly for %points.keys.sort(+*) -> $point {
-        say $point;
+        #say $point;
         my int @bitfield-columns;
         for %code-to-prop.keys.sort -> $propcode {
             my $prop = %code-to-prop{$propcode};
@@ -415,7 +450,7 @@ sub make-bitfield-rows {
 
     }
     say %bitfield-rows-seen;
-    for %bitfield-rows-seen.sort(*.key)>>.kv -> ($row-str, $index) {
+    for %bitfield-rows-seen.sort(+*.value)>>.kv -> ($row-str, $index) {
         say "row-str $row-str index $index";
         @bitfield-rows.push($row-str ~ "/* index $index */");
     }
@@ -425,7 +460,7 @@ sub make-bitfield-rows {
     push @array, $header;
     push @array, qq:to/END/;
     #include <stdio.h>
-    static const binary_prop_bitfield mybitfield[$bin-index] = \{
+    static const binary_prop_bitfield mybitfield[{$bin-index + 1}] = \{
     $binary-struct-str
         \};
     END
