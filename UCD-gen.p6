@@ -13,31 +13,48 @@ my %decomp_spec;
 my %point-to-struct;
 my %bitfields;
 my %point-index;
+my $debug-global = False;
+my Int $bin-index = -1;
 my $indent = "\c[SPACE]" x 4;
 sub circumfix:<⟅ ⟆>(*@array) returns str {
     @array.join('');
 }
-sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Bool :$less = False ) {
+sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, :$debug = False ) {
+    $debug-global = $debug;
     chdir "..";
+
     UnicodeData("UnicodeData", $less);
     enumerated-property(1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
     enumerated-property(1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType');
     unless $less {
+        DerivedNumericValues('extracted/DerivedNumericValues');
+        enumerated-property(1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth');
+        enumerated-property(1, 'N', 'East_Asian_Width', 'EastAsianWidth');
+        enumerated-property(1, '', 'Jamo_Short_Name', 'Jamo');
+        binary-property(1, 'PropList');
+        enumerated-property(1, 'L', 'Bidi_Class', 'extracted/DerivedBidiClass');
+        enumerated-property(1, 'No_Joining_Group', 'Joining_Group', 'extracted/DerivedJoiningGroup');
+        enumerated-property(1, 'Non_Joining', 'Joining_Type', 'extracted/DerivedJoiningGroup');
         binary-property(1, 'emoji/emoji-data');
         binary-property(1, 'DerivedCoreProperties');
+        enumerated-property(1, 'Other', 'Word_Break', 'auxiliary/WordBreakProperty');
+        enumerated-property(1, 'Other', 'Line_Break', 'LineBreak');
         # Not needed, in UnicodeData ?
         # Also we don't account for this case where we try and add a property that already exists
         binary-property(1, 'extracted/DerivedBinaryProperties');
         #NameAlias("NameAlias", "NameAliases" );
+        tweak_nfg_qc();
     }
-    #tweak_nfg_qc();
     dump-json($dump);
     unless $nomake {
         my $var = q:to/END2/;
         int main (void) {
-            unsigned int cp = 0x30;
+            printf("index %i\n", point_index['6']);
+            printf("%lli\n", Numeric_Value_Numerator[mybitfield[point_index['6']].Numeric_Value_Numerator]);
+            unsigned int cp = 0x28;
             int index = point_index[cp];
-            if ( index < 0 ) {
+            if ( index > max_bitfield_index ) {
+                printf("Character has no values we know of\n");
                 return 1;
             }
             printf("Index: %i", index);
@@ -58,6 +75,31 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Bool :$less = False ) {
 sub dump {
     say 'Dumping %points';
     Dump-Range(900..1000, %points);
+}
+sub DerivedNumericValues ( Str $filename ) {
+    my %numerator-seen;
+    my %denominator-seen;
+    for slurp-lines($filename) {
+        next if skip-line($_);
+        my @parts = .split-trim(/';'|'#'/);
+        my $number = @parts[3];
+        my $cp = @parts[0];
+        my ($numerator, $denominator);
+        if $number.contains('/') {
+            ($numerator, $denominator) = $number.split('/');
+        }
+        else {
+            $numerator = $number;
+            $denominator = 1;
+        }
+        %numerator-seen{$numerator} = True;
+        %denominator-seen{$denominator} = True;
+        my %point = 'Numeric_Value_Numerator' => $numerator.Int, 'Numeric_Value_Denominator' => $denominator.Int;
+        apply-to-cp($cp, %point);
+
+    }
+    register-enum-property('Numeric_Value_Denominator', 0, %denominator-seen);
+    register-enum-property('Numeric_Value_Numerator', 0, %numerator-seen);
 }
 sub binary-property ( Int $column, Str $filename ) {
     my %props-seen;
@@ -112,14 +154,12 @@ sub compute-bitwidth ( Int $max ) {
 # Eventually we will make a multi that can take ints
 sub register-enum-property (Str $propname, $negname, %seen-values) {
     my %enum;
-    say Dump %seen-values;
     my $type = $negname.WHAT.^name;
     note "Registering type $type enum property $propname";
     # Start the enum values at 0
     my Int $number = 0;
     # Our false name we got should be number 0, and will be different depending on the category
     if $type eq 'Str' {
-        say "GOING STRING";
         %enum{$negname} = $number++;
         %seen-values{$negname}:delete;
         say Dump %enum;
@@ -169,11 +209,6 @@ sub tweak_nfg_qc {
         }
     }
 }
-# NameAliases.txt
-# 0 Codepoint (Hex)
-# 1 NameAlias
-# 2 NameAlias type
-# sub path($cp, +@a) { say "\@.perl: @a.perl()"; @a.reduce({ $^a{$^b}:exists ?? $^a{$^b} !! $^a{$^b} = {} }) };
 sub slurp-lines ( Str $filename ) returns Seq {
     note "Reading $filename.txt…";
     "$folder/$filename.txt".IO.slurp.lines orelse die;
@@ -195,7 +230,7 @@ sub NameAlias ( Str $property, Str $file ) {
         apply-to-cp(@parts[0], %hash)
     }
 }
-sub UnicodeData ( Str $file, Bool $less = False ) {
+sub UnicodeData ( Str $file, Int $less = 0 ) {
     register-binary-property(<NFD_QC NFC_QC NFKD_QC NFG_QC Any Bidi_Mirrored>);
     my %seen-ccc;
     for slurp-lines $file {
@@ -205,7 +240,7 @@ sub UnicodeData ( Str $file, Bool $less = False ) {
             $num1, $num2, $num3, $bidimirrored, $u1name, $isocomment,
             $suc, $slc, $stc) = @parts;
         my $cp = :16($code-str);
-        next if $cp > 1000 and $less;
+        next if $less != 0 and $cp > $less;
         if ($name eq '<control>' ) {
             $name = sprintf '<control-%.4X>', $cp;
         }
@@ -250,18 +285,18 @@ sub apply-to-cp (Str $range-str, Hash $hashy) {
     # If it contains .. then it is a range
     if $range-str.match(/ ^ ( <:AHex>+ ) '..' ( <:AHex>+ ) $ /) {
         $range = Range.new: :16(~$0), :16(~$1);
+        for $range.lazy -> $cp {
+            apply-to-points($cp, $hashy);
+        }
     }
     # Otherwise there's only one point
     elsif $range-str.match(/ ^ (<:AHex>+) $ /) {
-        $_ = :16(~$0);
-        $range = Range.new($_, $_);
+        apply-to-points(:16(~$0), $hashy);
     }
     else {
         die "Unknown range '$range-str'";
     }
-    for $range.lazy -> $cp {
-        apply-to-points($cp, $hashy);
-    }
+
 }
 sub apply-to-points (Int $cp, Hash $hashy) {
     state $lock = Lock.new;
@@ -272,13 +307,14 @@ sub apply-to-points (Int $cp, Hash $hashy) {
         else {
             for $hashy{$key}.keys -> $key2 {
                 if !defined %points{$cp}{$key}{$key2} {
-                    say "key: $key key2 $key2";
+                    #say sprintf "U+%X key: %s key2 %s", $cp, $key, $key2;
+                    #say Dump $hashy;
                     given $key2.WHAT.^name {
                         when 'Int' {
-                            %points{$cp}{$key} = $key2;
+                            %points{$cp}{$key} = $hashy{$key};
                         }
                         when 'Bool' {
-                            %points{$cp}{$key} = $key2;
+                            %points{$cp}{$key} = $hashy{$key};
                         }
                         default {
                             die "Don't know how to apply type $_ in apply-to-points";
@@ -294,22 +330,15 @@ sub apply-to-points (Int $cp, Hash $hashy) {
         }
     }
 }
-sub reverse-hash ( Hash $hash ) {
-    my %new-hash{Int};
-    for $hash.keys {
-        %new-hash{$hash{$_}} = $_ if $hash{$_} ~~ Int and $_ ne 'bitwidth';
-    }
-    return %new-hash;
-}
 
-sub make-enums {
+sub make-enums (:$debug, :%enumerated-properties) {
     note "Making enums…";
     my @enums;
     for %enumerated-properties.keys -> $prop {
         my str $enum-str;
         my $type = %enumerated-properties{$prop}<type>;
-        my $rev-hash = reverse-hash(%enumerated-properties{$prop});
-        say $rev-hash;
+        my $rev-hash = reverse-hash-int-only(%enumerated-properties{$prop});
+        say $rev-hash if $debug;
         if $type eq 'Str' {
             for $rev-hash.keys.sort {
                 $enum-str = [~] $enum-str, $indent, Q<">, $rev-hash{$_}, Q<">, ",\n";
@@ -320,7 +349,8 @@ sub make-enums {
             for $rev-hash.keys.sort {
                 $enum-str = [~] $enum-str, $indent, $rev-hash{$_}, ",\n";
             }
-            $enum-str = [~] "static unsigned int $prop", "[", $rev-hash.elems, "] = \{\n", $enum-str, "\n\};\n";
+            say Dump $rev-hash if $debug-global;
+            $enum-str = [~] compute-type($rev-hash.values.».Int.max, $rev-hash.values.».Int.min ), " $prop", "[", $rev-hash.elems, "] = \{\n", $enum-str, "\n\};\n";
         }
         else {
             die "Don't know how to make an enum of type '$type'";
@@ -333,18 +363,47 @@ sub make-enums {
     @enums.join("\n");
 }
 sub make-point-index {
-    my $point-max = %point-index.keys.max;
-    my $binary-max = $point-max.Int.base(2).chars;
-    my int @mapping;
+    note "Making point_index…\n";
+    my Int $point-max = %points.keys.sort(-*)[0].Int;
+    say "point-max $point-max";
+    my $type = compute-type($bin-index + 1);
+    my $mapping := nqp::list_i;
+    my @rows;
     for 0…$point-max -> $point {
         if %point-index{$point}:exists {
-            nqp::push_i(@mapping, %point-index{$point});
+            nqp::push_i($mapping, %point-index{$point});
         }
         else {
-            nqp::push_i(@mapping, -1); # -1 represents NULL
+            # XXX for now let's denote things that have no value with 1 more than max index
+            nqp::push_i($mapping, $bin-index + 1); # -1 represents NULL
         }
     }
-    my $mapping-str = ⟅"static unsigned int point_index[", $point-max + 1, "] = \{\n    ", @mapping.join(",\n    "), "\n\};\n"⟆;
+    my $t1 = now;
+    my $iter := nqp::iterator($mapping);
+    my $string := nqp::unbox_s('');
+    my $i := nqp::unbox_i(0);
+    my $nl := nqp::unbox_s("\n");
+    say "Starting to concat points…";
+    nqp::while($iter, (
+        nqp::bind($i, nqp::add_i($i, 1));
+        nqp::bind($string,
+            nqp::concat(
+                nqp::concat($string,
+                    nqp::base_I(
+                        nqp::shift($iter), 10)
+                ), ','
+            )
+        );
+        nqp::if(nqp::iseq_i(0, nqp::mod_i($i, 2)),
+            $string := nqp::concat($string, $nl)
+        )
+        )
+    );
+    say now - $t1 ~ "Took this long to concat points";
+    #for ^nqp::elems($mapping) {
+    #    nqp
+    #$mapping := nqp::list_s;
+    my $mapping-str = ("#define max_bitfield_index $point-max\nstatic $type point_index[", $point-max + 1, "] = \{\n    ", $string, "\n\};\n").join('');
     $mapping-str;
 }
 sub make-bitfield-rows {
@@ -372,16 +431,14 @@ sub make-bitfield-rows {
     #exit;
     $header = nqp::concat($header, "\};\n");
     $header = nqp::concat($header, "typedef struct binary_prop_bitfield binary_prop_bitfield;\n");
-    my Int $bin-index = -1;
-    my str $begin-line = '    {';
-    my str $begin-line_2 = "\},/* ";
-    my str $end-line = "*/";
     my @bitfield-rows;
     my %bitfield-rows-seen;
+    my @code-to-prop-keys = %code-to-prop.keys.sort(+*);
+    my $t1 = now;
     quietly for %points.keys.sort(+*) -> $point {
         #say $point;
         my int @bitfield-columns;
-        for %code-to-prop.keys.sort -> $propcode {
+        for @code-to-prop-keys -> $propcode {
             my $prop = %code-to-prop{$propcode};
             #say "$propcode $prop";
             if %points{$point}{$prop}:exists {
@@ -410,7 +467,7 @@ sub make-bitfield-rows {
                 nqp::push_i(@bitfield-columns,0);
             }
         }
-        my str $bitfield-rows-str =  ⟅'    {', @bitfield-columns.join(","), '},'⟆;
+        my $bitfield-rows-str =  ('    {', @bitfield-columns.join(","), '},').join('');
         # If we've already seen an identical row
         if %bitfield-rows-seen{$bitfield-rows-str}:exists {
             %point-index{$point} = %bitfield-rows-seen{$bitfield-rows-str};
@@ -420,42 +477,14 @@ sub make-bitfield-rows {
             %bitfield-rows-seen{$bitfield-rows-str} = ++$bin-index;
             %point-index{$point} = $bin-index;
         }
-        #push %bitfields<binary_prop_bitfield>, @bitfield-columns;
-        # the ~ operator is really slow… so let's use some nqp ops
-        #my str @array = $begin-line, nqp::unbox_s(@bitfield-columns.join(',')),  $begin-line_2, nqp::unbox_s($point.Str), nqp::unbox_s("index: $bin-index"), $end-line;
-        #my str $line = @array.join('');
-        # If they are the same, don't push it, and don't increase the index
-
-        #say %point-index.perl;
-        #say %bitfield-rows-seen.perl;
-        #`{{
-        if @bitfield-rows[.end] eqv @bitfield-columns {
-            say "it's the same";
-            %points{$point}<index><binary> = $bin-index;
-            %point-index{$point} = $bin-index;
-            #say %point-index;
-        }
-        else {
-            say @bitfield-rows[.end].perl;
-            say @bitfield-columns.perl;
-            # If we matched ANY of the binary properties, increment the index by one
-            # and set this points index for binary props
-            $bin-index++;
-            #%points{$point}<index><binary> = $bin-index;
-            #%point-index{$point} = $bin-index;
-            @bitfield-rows.push(@bitfield-columns);
-        }
-        }}
-
 
     }
-    say %bitfield-rows-seen;
-    for %bitfield-rows-seen.sort(+*.value)>>.kv -> ($row-str, $index) {
-        say "row-str $row-str index $index";
+    my $t2 = now;
+    say "Finished computing all rows, took {now - $t1}. Now creating the final unduplicated version.";
+    for %bitfield-rows-seen.sort(+*.value).».kv -> ($row-str, $index) {
         @bitfield-rows.push($row-str ~ "/* index $index */");
     }
     $binary-struct-str = @bitfield-rows.join("\n");
-    $binary-struct-str ~~ s/','$//;
     my @array;
     push @array, $header;
     push @array, qq:to/END/;
@@ -464,6 +493,7 @@ sub make-bitfield-rows {
     $binary-struct-str
         \};
     END
+    say "Took {now - $t2} seconds to join all the seen bitfield rows";
     #push @array, $binary-struct-str;
     return @array.join("\n");
 }
@@ -471,7 +501,7 @@ sub make-bitfield-rows {
 sub dump-json ( Bool $dump ) {
     note "Converting data to JSON...";
     if $dump {
-        spurt "points.json", to-json(%points);
+        spurt %points.VAR.name ~ ".json", to-json(%points);
         spurt "decomp_spec.json", to-json(%decomp_spec);
     }
     spurt "enumerated-property.json", to-json(%enumerated-properties);
