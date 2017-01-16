@@ -12,9 +12,9 @@ my %all-properties;
 my %decomp_spec;
 my %point-to-struct;
 my %bitfields;
-my %point-index;
+my %point-index = nqp::hash;
 my $debug-global = False;
-my Int $bin-index = -1;
+my int $bin-index = -1;
 my $indent = "\c[SPACE]" x 4;
 sub circumfix:<⟅ ⟆>(*@array) returns str {
     @array.join('');
@@ -25,7 +25,7 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, :$debug =
 
     UnicodeData("UnicodeData", $less);
     enumerated-property(1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
-    enumerated-property(1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType');
+    #enumerated-property(1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType');
     unless $less {
         DerivedNumericValues('extracted/DerivedNumericValues');
         enumerated-property(1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth');
@@ -362,43 +362,26 @@ sub make-enums (:$debug, :%enumerated-properties) {
     }
     @enums.join("\n");
 }
-sub make-point-index {
+sub make-point-index (:$less) {
     note "Making point_index…\n";
     my Int $point-max = %points.keys.sort(-*)[0].Int;
     say "point-max $point-max";
     my $type = compute-type($bin-index + 1);
-    my $mapping := nqp::list_i;
+    my $mapping := nqp::list_s;
     my @rows;
+    my int $bin-index_i = nqp::unbox_i($bin-index);
     for 0…$point-max -> $point {
-        if %point-index{$point}:exists {
-            nqp::push_i($mapping, %point-index{$point});
-        }
-        else {
+        my str $point_s = nqp::base_I(nqp::decont($point), 10);
+        nqp::if(nqp::existskey(%point-index, $point_s),
+            # if
+            nqp::push_s($mapping, nqp::atkey(%point-index, $point_s)),
             # XXX for now let's denote things that have no value with 1 more than max index
-            nqp::push_i($mapping, $bin-index + 1); # -1 represents NULL
-        }
+            # else
+            nqp::push_s($mapping, nqp::atkey(%point-index, nqp::add_i($bin-index_i, 1))) # -1 represents NULL
+        );
     }
     my $t1 = now;
-    my $iter := nqp::iterator($mapping);
-    my $string := nqp::unbox_s('');
-    my $i := nqp::unbox_i(0);
-    my $nl := nqp::unbox_s("\n");
-    say "Starting to concat points…";
-    nqp::while($iter, (
-        nqp::bind($i, nqp::add_i($i, 1));
-        nqp::bind($string,
-            nqp::concat(
-                nqp::concat($string,
-                    nqp::base_I(
-                        nqp::shift($iter), 10)
-                ), ','
-            )
-        );
-        nqp::if(nqp::iseq_i(0, nqp::mod_i($i, 2)),
-            $string := nqp::concat($string, $nl)
-        )
-        )
-    );
+    my str $string = nqp::join(',', $mapping);
     say now - $t1 ~ "Took this long to concat points";
     #for ^nqp::elems($mapping) {
     #    nqp
@@ -470,12 +453,12 @@ sub make-bitfield-rows {
         my $bitfield-rows-str =  ('    {', @bitfield-columns.join(","), '},').join('');
         # If we've already seen an identical row
         if %bitfield-rows-seen{$bitfield-rows-str}:exists {
-            %point-index{$point} = %bitfield-rows-seen{$bitfield-rows-str};
+            nqp::bindkey(%point-index, nqp::unbox_s($point), nqp::base_I(nqp::decont(%bitfield-rows-seen{$bitfield-rows-str}), 10));
             #%point-index{$point} = $bin-index;
         }
         else {
             %bitfield-rows-seen{$bitfield-rows-str} = ++$bin-index;
-            %point-index{$point} = $bin-index;
+            nqp::bindkey(%point-index, nqp::unbox_s($point), nqp::base_I(nqp::decont($bin-index),10));
         }
 
     }
