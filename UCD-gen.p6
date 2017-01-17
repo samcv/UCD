@@ -365,21 +365,33 @@ sub make-point-index (:$less) {
 }
 sub make-bitfield-rows {
     note "Making bitfield-rows…";
-    my %code-to-prop{Int};
-    my %prop-to-code;
-    my Int $i = 0;
+    my int $i = 0;
     my str $binary-struct-str;
     # Create the order of the struct
     my str $header = "struct binary_prop_bitfield  \{\n";
-    for %binary-properties.keys.sort -> $bin {
-        %prop-to-code{$bin} = $i;
-        %code-to-prop{$i} = $bin;
+    my %nqp-prop-to-code = nqp::hash;
+    my %nqp-code-to-prop = nqp::hash;
+    my %nqp-bin-prop-to-code = nqp::hash;
+    my %nqp-bin-code-to-prop = nqp::hash;
+    for %binary-properties.keys.sort -> $bin-prop {
+        my str $i_s = nqp::base_I(nqp::decont($i), 10);
+        nqp::bindkey(%nqp-bin-prop-to-code, $bin-prop, $i_s);
+        nqp::bindkey(%nqp-bin-code-to-prop, $i_s, $bin-prop);
+
+        nqp::bindkey(%nqp-prop-to-code, $bin-prop, $i_s);
+        nqp::bindkey(%nqp-code-to-prop, $i_s, $bin-prop);
         $i++;
-        $header = nqp::concat($header,"    unsigned int $bin :1;\n");
+        $header = nqp::concat($header,"    unsigned int $bin-prop :1;\n");
     }
+    my %nqp-enum-prop-to-code = nqp::hash;
+    my %nqp-enum-code-to-prop = nqp::hash;
     for %enumerated-properties.keys.sort -> $property {
-        %prop-to-code{$property} = $i;
-        %code-to-prop{$i} = $property;
+        my str $i_s = nqp::base_I(nqp::decont($i), 10);
+        nqp::bindkey(%nqp-enum-prop-to-code, $property, $i_s);
+        nqp::bindkey(%nqp-enum-code-to-prop, $i_s, $property);
+
+        nqp::bindkey(%nqp-prop-to-code, $property, $i_s);
+        nqp::bindkey(%nqp-code-to-prop, $i_s, $property);
         $i++;
         my $bitwidth = %enumerated-properties{$property}<bitwidth>;
         $header = nqp::concat($header, "    unsigned int $property :$bitwidth;\n");
@@ -388,28 +400,37 @@ sub make-bitfield-rows {
     $header = nqp::concat($header, "typedef struct binary_prop_bitfield binary_prop_bitfield;\n");
     my $bitfield-rows := nqp::list_s;
     my %bitfield-rows-seen = nqp::hash;
-    my @code-to-prop-keys = %code-to-prop.keys.sort(+*);
+    my @code-to-prop-keys = %nqp-code-to-prop.keys.sort(+*).».Str;
     my $t1 = now;
     quietly for %points.keys.sort(+*) -> $point {
         my $bitfield-columns := nqp::list_s;
         for @code-to-prop-keys -> $propcode {
-            my $prop = %code-to-prop{$propcode};
-            if %points{$point}{$prop}:exists {
-                if nqp::existskey(%binary-properties, $prop) {
-                    nqp::push_s($bitfield-columns, nqp::unbox_s(%points{$point}{$prop} ?? '1' !! '0'));
+            my str $prop = nqp::atkey(%nqp-code-to-prop, $propcode);
+            my %points-point = nqp::atkey(%points, $point);
+            if nqp::existskey(%points-point, $prop) {
+                if nqp::existskey(%nqp-bin-prop-to-code, $prop) {
+                    nqp::push_s($bitfield-columns,
+                      nqp::unbox_s(
+                        nqp::atkey(%points-point, $prop) ?? '1' !! '0'
+                      )
+                    )
                 }
-                elsif nqp::existskey(%enumerated-properties, $prop) {
-                    my $enum := %points{$point}{$prop};
-                    # If the key exists we need to look up the value
-                    if %enumerated-properties{$prop}{$enum}:exists {
-                        $enum := %enumerated-properties{$prop}{ $enum };
-                        nqp::push_s($bitfield-columns, nqp::base_I(nqp::decont($enum),10));
+                elsif nqp::existskey(%nqp-enum-prop-to-code, $prop) {
+                    # get the value of the point's enum property
+                    my str $enum_s = nqp::base_I(nqp::decont(%points-point{$prop}), 10);
+                    # If the value exists we need to look up the value
+                    if %enumerated-properties{$prop}{$enum_s}:exists {
+                        nqp::push_s($bitfield-columns,
+                          nqp::base_I(
+                            nqp::decont(%enumerated-properties{$prop}{$enum_s}), 10
+                          )
+                        );
                     }
                     # If it doesn't exist it's an Int property. Eventually we should try and look
                     # up the enum type in the hash
                     # XXX make it so we have consistent functionality for Int and non Int enums
                     else {
-                        nqp::push_s($bitfield-columns, nqp::base_I(nqp::decont($enum),10));
+                        nqp::push_s($bitfield-columns, $enum_s);
                     }
                 }
                 else {
