@@ -388,7 +388,7 @@ sub make-enums {
             for $rev-hash.keys.sort {
                 $enum-str = ($enum-str, $indent, Q<">, $rev-hash{$_}, qq[",\n]).join;
             }
-            $enum-str = ("static char *$prop", "[", $rev-hash.elems, "] = \{\n", $enum-str, "\n\};\n").join;
+            $enum-str = (compute-type('char *'), $prop, "[", $rev-hash.elems, "] = \{\n", $enum-str, "\n\};\n").join;
         }
         elsif $type eq 'Int' {
             for $rev-hash.keys.sort {
@@ -438,7 +438,7 @@ sub make-point-index (:$less) {
     say "Adding nowlines every 50-60 chars";
     $string ~~ s:g/(.**70..79',')/$0\n/;
     say now - $t1 ~ "Took this long to concat points";
-    my $mapping-str = ("#define max_bitfield_index $point-max\nstatic $type point_index[", $point-max + 1, "] = \{\n    ", $string, "\n\};\n").join;
+    my $mapping-str = ("#define max_bitfield_index $point-max\n$type point_index[", $point-max + 1, "] = \{\n    ", $string, "\n\};\n").join;
     $mapping-str;
 }
 sub make-bitfield-rows {
@@ -521,9 +521,10 @@ sub make-bitfield-rows {
     $binary-struct-str = nqp::join("\n", $bitfield-rows);
     my @array;
     push @array, $header;
+    my $prefix = get-prefix();
     push @array, qq:to/END/;
     #include <stdio.h>
-    static const binary_prop_bitfield mybitfield[{$bin-index + 1}] = \{
+    $prefix binary_prop_bitfield mybitfield[{$bin-index + 1}] = \{
     $binary-struct-str
         \};
     END

@@ -2,6 +2,10 @@ use v6;
 use MONKEY-TYPING;
 use Data::Dump;
 use nqp;
+my $prefix = 'const static ';
+sub get-prefix is export {
+    $prefix;
+}
 augment class Str {
     multi method split-trim ( Str $delimiter, Int $limit? ) {
         $limit ?? self.split($delimiter, $limit).».trim
@@ -27,7 +31,7 @@ sub reverse-hash-int-only ( Hash $hash ) is export {
 }
 multi sub compute-type ( Str $str ) {
     if $str eq 'char *' {
-        return 'const static char *';
+        return $prefix ~ 'char *';
     }
     else {
         die "Don't know what type '$str' is";
@@ -37,21 +41,23 @@ multi sub compute-type ( Int $max, Int $min = 0 ) is export {
     say "max: $max, min: $min";
     die "Not sure how to handle min being higher than max. Min: $min, Max: $max" if $min.abs > $max;
     my $size = $max.base(2).chars / 8;
+    my $type;
     if $size < 1 {
-        return $min >= 0 ?? "unsigned char" !! 'short';
+        $type ~= $min >= 0 ?? "unsigned char" !! 'short';
     }
     elsif $size <= 2 {
-        return $min >= 0 ?? 'unsigned short' !! 'int';
+        $type ~= $min >= 0 ?? 'unsigned short' !! 'int';
     }
     elsif $size <= 4 {
-        return $min >= 0 ?? 'unsigned int' !! 'long int';
+        $type ~= $min >= 0 ?? 'unsigned int' !! 'long int';
     }
     elsif $size <= 8 {
-        return $min >= 0 ?? 'unsigned long int' !! 'long long int';
+        $type ~= $min >= 0 ?? 'unsigned long int' !! 'long long int';
     }
     else {
         die "Size is $size. Not sure what to do";
     }
+    $prefix ~ $type;
 }
 sub circumfix:<⟅ ⟆>(*@array) returns str is export {
     @array.join('');
