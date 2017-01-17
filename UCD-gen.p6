@@ -341,14 +341,15 @@ sub make-enums {
 }
 sub make-point-index (:$less) {
     note "Making point_index…\n";
-    my Int $point-max = %points.keys.sort(-*)[0].Int;
+    my int $point-max = %points.keys.sort(-*)[0].Int;
     say "point-max $point-max";
     my $type = compute-type($bin-index + 1);
     my $mapping := nqp::list_s;
     my @rows;
+    my int $i = 0;
     my int $bin-index_i = nqp::unbox_i($bin-index);
-    for 0…$point-max -> $point {
-        my str $point_s = nqp::base_I(nqp::decont($point), 10);
+    nqp::while($i <= $point-max, (
+        my str $point_s = nqp::base_I(nqp::decont($i), 10);
         nqp::if(nqp::existskey(%point-index, $point_s),
             # if
             nqp::push_s($mapping, nqp::atkey(%point-index, $point_s)),
@@ -356,7 +357,9 @@ sub make-point-index (:$less) {
             # else
             nqp::push_s($mapping, nqp::atkey(%point-index, nqp::add_i($bin-index_i, 1))) # -1 represents NULL
         );
-    }
+        $i++
+      )
+    );
     my $t1 = now;
     my str $string = nqp::join(",\n", $mapping);
     say now - $t1 ~ "Took this long to concat points";
