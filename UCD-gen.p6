@@ -10,6 +10,7 @@ if !$build-folder.IO.d {
   mkdir $build-folder;
 }
 my %points;
+my %names = nqp::hash;
 my %binary-properties;
 my %enumerated-properties;
 my %all-properties;
@@ -24,6 +25,7 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, :$debug =
     $debug-global = $debug;
     enumerated-property(1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType');
     UnicodeData("UnicodeData", $less);
+    my $name-file = Generate_Name_List();
     enumerated-property(1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
     unless $less {
         DerivedNumericValues('extracted/DerivedNumericValues');
@@ -56,22 +58,26 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, :$debug =
         END4
         $int-main ~= $less == 0 ?? $more !! '';
         my $var = q:to/END2/;
-            unsigned int cp = 0x28;
-            int cp_index = (int) point_index[cp];
-            if ( cp_index > max_bitfield_index ) {
-                printf("Character has no values we know of\n");
-                return 1;
+            for (int i = 0; i < 150; i++) {
+                int cp_index = (int) point_index[i];
+                if ( cp_index > max_bitfield_index ) {
+                    printf("Character has no values we know of\n");
+                    return 1;
+                }
+                unsigned int cp_GCB = mybitfield[cp_index].Grapheme_Cluster_Break;
+                char * printf_s = "U+%X [%c] Bidi_Mirrored: %i GCB: %s(%i)\n";
+                char * printf_s_control = "U+%X Bidi_Mirrored: %i GCB: %s(%i)\n";
+                if (cp_GCB != Uni_PVal_GRAPHEME_CLUSTER_BREAK_Control ) {
+                    printf(printf_s, i, (char) i, mybitfield[cp_index].Bidi_Mirrored, Grapheme_Cluster_Break[cp_GCB], cp_GCB );
+                }
+                else {
+                    printf(printf_s_control, i, mybitfield[cp_index].Bidi_Mirrored, Grapheme_Cluster_Break[cp_GCB], cp_GCB );
+                }
             }
-            printf("Index: %i\n", cp_index);
-            unsigned int num = mybitfield[cp_index].Grapheme_Cluster_Break;
-            printf("GCB enum %i\n", num);
-            char * str = Grapheme_Cluster_Break[num];
-            printf("GCB = %s\n", str);
-            printf("U+%X Bidi_Mirrored: %i\n", cp, mybitfield[cp_index].Bidi_Mirrored );
         }
         END2
         $int-main ~= $var;
-        my $bitfield_c = (make-enums(), make-bitfield-rows(), make-point-index(), $int-main).join;
+        my $bitfield_c = (make-enums(), $name-file, make-bitfield-rows(), make-point-index(), $int-main).join;
         note "Saving bitfield.c…";
         spurt "$build-folder/bitfield.c", $bitfield_c;
     }
@@ -80,6 +86,23 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, :$debug =
 sub dump {
     say 'Dumping %points';
     Dump-Range(900..1000, %points);
+}
+sub Generate_Name_List {
+    my $names_l := nqp::list_s;
+    my $max = %names.keys.map({$^a.Int}).max;
+    for 0..$max -> $cp {
+        my str $cp_s = nqp::base_I(nqp::decont($cp), 10);
+        if nqp::existskey(%names, $cp_s) {
+            nqp::push_s($names_l, nqp::unbox_s('"' ~ nqp::atkey(%names, $cp_s) ~ '"'));
+        }
+        else {
+            nqp::push_s($names_l, 'NULL');
+        }
+    }
+    my $elems = nqp::elems($names_l);
+    my $string = nqp::join(",\n", $names_l);
+    $string = "#define NULL ((void *)0)\nstatic const char *uninames[$elems] = \{\n" ~ $string ~ "\n\};\n";
+    return $string;
 }
 sub DerivedNumericValues ( Str $filename ) {
     my %numerator-seen;
@@ -241,6 +264,10 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
         }
         my %hash;
         %hash<Unicode_1_Name>            =? $u1name;
+        if $name {
+            nqp::bindkey(%names, nqp::base_I(nqp::decont($cp), 10), $name);
+        }
+        # We may not need to set the name in the hash in case we only rely on %names;
         %hash<name>                      =? $name;
         %hash<gencat_name>               =? $gencat;
         %hash<General_Category>          =? $gencat;
@@ -324,6 +351,7 @@ sub make-enums {
     note "Making enums…";
     my @enums;
     say Dump %enumerated-properties if $debug-global;
+    my $header;
     for %enumerated-properties.keys -> $prop {
         my str $enum-str;
         my $type = %enumerated-properties{$prop}<type>;
@@ -345,8 +373,13 @@ sub make-enums {
         else {
             die "Don't know how to make an enum of type '$type'";
         }
+        # Create the #define's for the Property Value's
+        for $rev-hash.kv -> $enum-no, $prop-val {
+          $header ~= "#define Uni_PVal_{$prop.uc}_$prop-val $enum-no\n";
+        }
         @enums.push($enum-str);
     }
+    @enums.unshift($header);
     @enums.join("\n");
 }
 sub make-point-index (:$less) {
@@ -355,6 +388,7 @@ sub make-point-index (:$less) {
     say "point-max $point-max";
     my $type = compute-type($bin-index + 1);
     my $mapping := nqp::list_s;
+    my $mapping_rows := nqp::list_s;
     my @rows;
     my $i := nqp::add_i(0, 0);
     my int $bin-index_i = nqp::unbox_i($bin-index);
@@ -371,7 +405,10 @@ sub make-point-index (:$less) {
         $i := nqp::add_i($i, 1);
       )
     );
-    my str $string = nqp::join(",\n", $mapping);
+    my $string = nqp::join(",", $mapping);
+    my int $chars = nqp::chars($string);
+    say "Adding nowlines every 50-60 chars";
+    $string ~~ s:g/(.**70..79',')/$0\n/;
     say now - $t1 ~ "Took this long to concat points";
     my $mapping-str = ("#define max_bitfield_index $point-max\nstatic $type point_index[", $point-max + 1, "] = \{\n    ", $string, "\n\};\n").join;
     $mapping-str;
@@ -390,7 +427,7 @@ sub make-bitfield-rows {
         $i++;
         $header = nqp::concat($header,"    unsigned int $bin :1;\n");
     }
-    for %enumerated-properties.keys.sort -> $property {
+    for %enumerated-properties.keys.sort({%enumerated-properties{$^a}<bitwidth> cmp %enumerated-properties{$^b}<bitwidth>}) -> $property {
         %prop-to-code{$property} = $i;
         %code-to-prop{$i} = $property;
         $i++;
