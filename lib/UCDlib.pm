@@ -2,7 +2,6 @@ use v6;
 use MONKEY-TYPING;
 use Data::Dump;
 use nqp;
-INIT say "Compiling UCDlib.pm";
 augment class Str {
     multi method split-trim ( Str $delimiter, Int $limit? ) {
         $limit ?? self.split($delimiter, $limit).».trim
@@ -26,7 +25,15 @@ sub reverse-hash-int-only ( Hash $hash ) is export {
     }
     return %new-hash;
 }
-sub compute-type ( Int $max, Int $min = 0 ) is export {
+multi sub compute-type ( Str $str ) {
+    if $str eq 'char *' {
+        return 'const static char *';
+    }
+    else {
+        die "Don't know what type '$str' is";
+    }
+}
+multi sub compute-type ( Int $max, Int $min = 0 ) is export {
     say "max: $max, min: $min";
     die "Not sure how to handle min being higher than max. Min: $min, Max: $max" if $min.abs > $max;
     my $size = $max.base(2).chars / 8;

@@ -3,7 +3,9 @@ use nqp;
 use Data::Dump;
 use lib 'lib';
 use UCDlib;
-INIT say "Initializing…";
+use EncodeBase40;
+BEGIN say "Initializing…";
+INIT  say "Starting…";
 my Str $UNIDATA-folder = "UNIDATA";
 my Str $build-folder = "build";
 if !$build-folder.IO.d {
@@ -77,9 +79,10 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, :$debug =
         }
         END2
         $int-main ~= $var;
-        my $bitfield_c = (make-enums(), $name-file, make-bitfield-rows(), make-point-index(), $int-main).join;
+        my $bitfield_c = (make-enums(), make-bitfield-rows(), make-point-index(), $int-main).join;
         note "Saving bitfield.c…";
         spurt "$build-folder/bitfield.c", $bitfield_c;
+        spurt "$build-folder/names.c", $name-file ~ "void main (void) \{\n\}\n";
     }
     say "Took {now - INIT now} seconds.";
 }
@@ -89,19 +92,43 @@ sub dump {
 }
 sub Generate_Name_List {
     my $names_l := nqp::list_s;
+    my $uninames_l := nqp::list_s;
     my $max = %names.keys.map({$^a.Int}).max;
+    my $c-type = compute-type(40**3);
+    my $uniname_c_name = 'uniname_';
+    my $uniname_prefix = $c-type ~ ' ' ~ $uniname_c_name;
+    my $null_uniname_post = '[1] = {0}';
+    my $t1 = now;
     for 0..$max -> $cp {
         my str $cp_s = nqp::base_I(nqp::decont($cp), 10);
         if nqp::existskey(%names, $cp_s) {
-            nqp::push_s($names_l, nqp::unbox_s('"' ~ nqp::atkey(%names, $cp_s) ~ '"'));
+            my $s := nqp::atkey(%names, $cp_s);
+            if $s.contains('<') {
+                nqp::push_s($names_l, $uniname_prefix ~ $cp_s ~ $null_uniname_post);
+                nqp::push_s($uninames_l, $uniname_c_name ~ $cp_s);
+                next;
+            }
+            my @a = encode-base40-string($s);
+            nqp::push_s($names_l,
+                nqp::unbox_s(
+                    $uniname_prefix ~ $cp_s ~ '[' ~ @a.elems + 1 ~ '] = {' ~ @a.elems ~ ',' ~ @a.join(',') ~ '}'
+                )
+            );
         }
         else {
-            nqp::push_s($names_l, 'NULL');
+            nqp::push_s($names_l, $uniname_prefix ~ $cp_s ~ $null_uniname_post);
         }
+        nqp::push_s($uninames_l, $uniname_c_name ~ $cp_s);
     }
     my $elems = nqp::elems($names_l);
-    my $string = nqp::join(",\n", $names_l);
-    $string = "#define NULL ((void *)0)\nstatic const char *uninames[$elems] = \{\n" ~ $string ~ "\n\};\n";
+    nqp::push_s($uninames_l, "\};\n");
+    nqp::push_s($names_l, "\n");
+    my $string = join '',
+                "#define NULL ((void *)0)\n",
+                nqp::join(";\n", $names_l),
+                $c-type ~ " *uninames[$elems] = \{\n",
+                nqp::join(",\n", $uninames_l);
+    say "Took " ~ now - $t1 ~ " seconds to generate name list";
     return $string;
 }
 sub DerivedNumericValues ( Str $filename ) {
@@ -375,7 +402,8 @@ sub make-enums {
         }
         # Create the #define's for the Property Value's
         for $rev-hash.kv -> $enum-no, $prop-val {
-          $header ~= "#define Uni_PVal_{$prop.uc}_$prop-val $enum-no\n";
+            my $prop-val-name = $prop-val.subst('-', 'minus');
+            $header ~= "#define Uni_PVal_{$prop.uc}_$prop-val-name $enum-no\n";
         }
         @enums.push($enum-str);
     }

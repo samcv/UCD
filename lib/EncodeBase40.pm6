@@ -11,10 +11,10 @@ my %base;
 for ^@bases.elems {
     %base{@bases[$_]} = $_;
 }
-sub get-base-40-table {
+sub get-base40-table is export {
     @bases;
 }
-sub get-base-40-hash {
+sub get-base40-hash is export {
     %base;
 }
 sub test-points {
@@ -24,19 +24,21 @@ sub test-points {
         my $name = $cp.uniname.lc;
         #say $name;
         next if $name.contains('<') or $name eq '';
-        $new += encode-string($name).elems;
+        $new += encode-base40-string($name).elems;
         $old += $name.chars;
     }
     say "new $new old $old. diff: {$old - $new}";
 
 }
-sub encode-base-40-string ( Str $string ) is export {
+sub encode-base40-string ( Str $string ) is export {
     my @items = $string.comb;
     my @coded-nums;
     my $i = 40 ** 2;
     my $triplet = 0;
     while @items {
-        $triplet += %base{@items.shift} * $i;
+        my $item = @items.shift;
+        die "Can't find this letter in table “$item”" unless %base{$item}:exists;
+        $triplet += %base{$item} * $i;
         $i = $i / 40;
         if $i < 1 or @items.elems == 0 {
             $i = 40 ** 2;
@@ -46,7 +48,7 @@ sub encode-base-40-string ( Str $string ) is export {
     }
     @coded-nums;
 }
-sub decode-nums ( @coded-nums ) {
+sub decode-base40-nums ( @coded-nums ) is export {
     my @decoded-chars;
     while @coded-nums {
         my $num = @coded-nums.shift;
