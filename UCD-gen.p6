@@ -6,6 +6,9 @@ use UCDlib;
 INIT say "Initializing…";
 my Str $UNIDATA-folder = "UNIDATA";
 my Str $build-folder = "build";
+if !$build-folder.IO.d {
+  mkdir $build-folder;
+}
 my %points;
 my %binary-properties;
 my %enumerated-properties;
@@ -23,6 +26,7 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, :$debug =
     UnicodeData("UnicodeData", $less);
     enumerated-property(1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
     unless $less {
+        DerivedNumericValues('extracted/DerivedNumericValues');
         enumerated-property(1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth');
         enumerated-property(1, 'N', 'East_Asian_Width', 'EastAsianWidth');
         enumerated-property(1, '', 'Jamo_Short_Name', 'Jamo');
@@ -42,26 +46,32 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, :$debug =
     }
     dump-json($dump);
     unless $nomake {
-        my $var = q:to/END2/;
+        my $int-main = Q:to/END/;
         int main (void) {
+        END
+        my $more = Q:to/END4/;
             printf("index %i\n", point_index['6']);
             printf("%lli\n", Numeric_Value_Numerator[mybitfield[point_index['6']].Numeric_Value_Numerator]);
             unsigned int cp = 0x28;
-            int index = point_index[cp];
-            if ( index > max_bitfield_index ) {
+        END4
+        $int-main ~= $less == 0 ?? $more !! '';
+        my $var = q:to/END2/;
+            unsigned int cp = 0x28;
+            int cp_index = (int) point_index[cp];
+            if ( cp_index > max_bitfield_index ) {
                 printf("Character has no values we know of\n");
                 return 1;
             }
-            printf("Index: %i", index);
-            unsigned int num = mybitfield[index].Grapheme_Cluster_Break;
+            printf("Index: %i\n", cp_index);
+            unsigned int num = mybitfield[cp_index].Grapheme_Cluster_Break;
             printf("GCB enum %i\n", num);
             char * str = Grapheme_Cluster_Break[num];
             printf("GCB = %s\n", str);
-            printf("U+%X Bidi_Mirrored: %i\n", cp, mybitfield[index].Bidi_Mirrored );
+            printf("U+%X Bidi_Mirrored: %i\n", cp, mybitfield[cp_index].Bidi_Mirrored );
         }
-
         END2
-        my $bitfield_c = (make-enums(), make-bitfield-rows(), make-point-index(), $var).join;
+        $int-main ~= $var;
+        my $bitfield_c = (make-enums(), make-bitfield-rows(), make-point-index(), $int-main).join;
         note "Saving bitfield.c…";
         spurt "$build-folder/bitfield.c", $bitfield_c;
     }
