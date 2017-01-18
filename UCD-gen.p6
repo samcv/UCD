@@ -83,9 +83,12 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$de
         }
         END2
         $int-main ~= $var;
-        my $bitfield_c = (make-enums(), make-bitfield-rows(), make-point-index(), $int-main).join;
-        note "Saving bitfield.c…";
-        spurt "$build-folder/bitfield.c", $bitfield_c;
+        unless $names-only {
+            my $bitfield_c = (make-enums(), make-bitfield-rows(), make-point-index(), $int-main).join;
+            note "Saving bitfield.c…";
+            spurt "$build-folder/bitfield.c", $bitfield_c;
+        }
+        note "Saving names.c…";
         spurt "$build-folder/names.c", $name-file;
     }
     say "Took {now - INIT now} seconds.";
@@ -95,20 +98,80 @@ sub dump {
     Dump-Range(900..1000, %points);
 }
 sub Generate_Name_List {
-    my $names_l := nqp::list_s;
     my $max = %names.keys.map({$^a.Int}).max;
+    my %shift-one; # Stores the word to number mappings for the first shift level
+    my %shift-two; # Stores it for the second shift level
+    my $no-empty = True;
+    my %seen-words;
+    sub get-shift-levels {
+        my %seen-words-shift-one; # Stores the words seen, and how many bytes we will save if we
+        my %seen-words-shift-two; # shift once or twice
+        my $standard-charcount = 0;
+        for 0..$max -> $cp {
+            my str $cp_s = nqp::base_I(nqp::decont($cp), 10);
+            if nqp::existskey(%names, $cp_s) {
+                my $s := nqp::atkey(%names, $cp_s);
+                if $s.contains('<') {
+                    next;
+                }
+                for $s.words {
+                    %seen-words{$_}++;
+                    $standard-charcount += $_.chars + 1;
+                    %seen-words-shift-one{$_} += (.chars * 2/3) - 2/3 * 2; # Calculate how much we save if we shorten it
+                    %seen-words-shift-two{$_} += (.chars * 2/3) - 2/3 * 3; # for first and second shifts
+                }
+            }
+        }
+        my $z = 0;
+        my $weird-saved = 0;
+        for %seen-words.sort(-*.value) -> $pair {
+            last if $z >= 160;
+            $weird-saved += $pair.value * $pair.key.chars - 1;
+        }
+        say "Weird would be $standard-charcount bytes, but could save $weird-saved\n";
+        say "weird total {$standard-charcount - $weird-saved}";
+
+        my $saved-one = 0;
+        my $i = 0;
+        for %seen-words-shift-one.sort(-*.value) {
+            #.say;
+            %shift-one{.key} = $i;
+            $saved-one += .value;
+            $i++;
+            last if $i > 40;
+        }
+        say "Can save: " ~ $saved-one / 1000 ~ " KB with first shift level";
+        my $saved-two;
+        my $j = 0;
+        for %seen-words-shift-two.sort(-*.value) {
+            next if %shift-one{.key}:exists;
+            %shift-two{.key} = $j;
+            $saved-two += .value;
+            $j++;
+            last if $j > 40;
+        }
+        my $saved = $saved-one + $saved-two;
+        say "Can save: " ~ $saved-two / 1000 ~ " KB with the second shift level";
+        say "Can save: " ~ $saved / 1000 ~ " KB with both levels";
+        say "Shift one: " ~ %shift-one.perl;
+        say "Shift two: " ~ %shift-two.perl;
+    }
+    get-shift-levels();
+    set-shift-levels(%shift-one);
+    my $names_l := nqp::list_s;
     my $c-type = compute-type(40**3);
     my $t1 = now;
     my $all-elems;
-    my %seen-words;
     for 0..$max -> $cp {
         my str $cp_s = nqp::base_I(nqp::decont($cp), 10);
         if nqp::existskey(%names, $cp_s) {
             my $s := nqp::atkey(%names, $cp_s);
             # XXX for now we just skip these
             if $s.contains('<') {
-                nqp::push_s($names_l, "0, /* empty: $s */");
-                $all-elems++;
+                unless $no-empty {
+                    nqp::push_s($names_l, "0, /* empty: $s */");
+                    $all-elems++;
+                }
                 next;
             }
             my @a = encode-base40-string($s);
@@ -119,7 +182,7 @@ sub Generate_Name_List {
             );
         }
         # If we have no name just push a 0
-        else {
+        elsif !$no-empty {
             nqp::push_s($names_l, '0, /* empty */');
             $all-elems++;
         }
