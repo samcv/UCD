@@ -1,6 +1,5 @@
-all:
-	cd build && gcc -Os bitfield.c -o ../bitfield && gcc -Os names.c -o ../names
-names:
+all: names bitfield
+names: build/names.c
 	cd build && gcc -Os names.c -o ../names
-bitfield:
+bitfield: build/bitfield.c
 	cd build && gcc -Os bitfield.c -o ../bitfield

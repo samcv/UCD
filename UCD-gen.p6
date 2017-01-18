@@ -96,49 +96,42 @@ sub dump {
 }
 sub Generate_Name_List {
     my $names_l := nqp::list_s;
-    my $uninames_l := nqp::list_s;
     my $max = %names.keys.map({$^a.Int}).max;
     my $c-type = compute-type(40**3);
-    my $uniname_c_name = 'uniname_';
-    my $uniname_prefix = $c-type ~ ' ' ~ $uniname_c_name;
-    my $null_uniname_post = '[1] = {0}';
     my $t1 = now;
     my $all-elems;
+    my %seen-words;
     for 0..$max -> $cp {
         my str $cp_s = nqp::base_I(nqp::decont($cp), 10);
         if nqp::existskey(%names, $cp_s) {
             my $s := nqp::atkey(%names, $cp_s);
+            # XXX for now we just skip these
             if $s.contains('<') {
-                #nqp::push_s($names_l, $uniname_prefix ~ $cp_s ~ $null_uniname_post);
-                #nqp::push_s($uninames_l, $uniname_c_name ~ $cp_s);
+                nqp::push_s($names_l, "0, /* empty: $s */");
+                $all-elems++;
                 next;
             }
             my @a = encode-base40-string($s);
             my $elems = @a.elems;
             $all-elems += $elems + 1;
             nqp::push_s($names_l,
-                nqp::unbox_s(
-                    $elems ~ ',' ~ @a.join(',')
-                )
+                $elems ~ ',' ~ @a.join(',') ~ ',' ~ " /* $s */"
             );
         }
+        # If we have no name just push a 0
         else {
-            #nqp::push_s($names_l, $uniname_prefix ~ $cp_s ~ $null_uniname_post);
+            nqp::push_s($names_l, '0, /* empty */');
+            $all-elems++;
         }
-        #nqp::push_s($uninames_l, $uniname_c_name ~ $cp_s);
     }
-    #my $elems = nqp::elems($names_l);
     nqp::push_s($names_l, "\};\n");
-    #nqp::push_s($names_l, "\n");
     my $string = join( '',
                 "#include <stdio.h>\n",
+                "#define uninames_elems $all-elems\n",
                 get-base40-c-table(),
                 $c-type ~ ' uninames[' ~ $all-elems ~ '] = {' ~ "\n",
-                #"#define NULL ((void *)0)\n",
-                nqp::join(",\n", $names_l),
+                nqp::join("\n", $names_l),
                 "$snippets-folder/tail_names.c".IO.slurp,
-                #$c-type ~ " *uninames[$elems] = \{\n",
-                #nqp::join(",\n", $uninames_l,
                 );
     say "Took " ~ now - $t1 ~ " seconds to generate name list";
     return $string;

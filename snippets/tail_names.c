@@ -10,16 +10,22 @@ int get_chars ( unsigned short num, char *out ) {
 }
 
 int main (void) {
-    int uniname_l = 466;
-    for (int j = 0; j < uniname_l;) {
+    int cp = 0;
+    for (int j = 0; j < uninames_elems;) {
         int len = uninames[j];
+        if (len == 0) {
+            j++;
+            cp++;
+            continue;
+        }
         char string[len * 3];
         for (int i = 1; i <= len; i++) {
-            get_chars(uninames[j+   i],  string + (i-1) * 3);
+            get_chars(uninames[j + i],  string + (i - 1) * 3);
         }
         string[len * 3] = '\0';
-        printf("'%s'\n", string);
+        printf("U+%X '%s'\n", cp, string);
         j = j + len + 1;
+        cp++;
     }
     return 0;
 }
