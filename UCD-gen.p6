@@ -8,6 +8,7 @@ BEGIN say "Initializing…";
 INIT  say "Starting…";
 my Str $UNIDATA-folder = "UNIDATA";
 my Str $build-folder = "build";
+my Str $snippets-folder = "snippets";
 if !$build-folder.IO.d {
   mkdir $build-folder;
 }
@@ -23,13 +24,16 @@ my %point-index = nqp::hash;
 my $debug-global = False;
 my int $bin-index = -1;
 my $indent = "\c[SPACE]" x 4;
-sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, :$debug = False ) {
+sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$debug = False, Bool :$names-only = False ) {
     $debug-global = $debug;
-    enumerated-property(1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType');
     UnicodeData("UnicodeData", $less);
     my $name-file = Generate_Name_List();
-    enumerated-property(1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
-    unless $less {
+    unless $names-only {
+        enumerated-property(1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType');
+
+        enumerated-property(1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
+    }
+    unless $less or $names-only {
         DerivedNumericValues('extracted/DerivedNumericValues');
         enumerated-property(1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth');
         enumerated-property(1, 'N', 'East_Asian_Width', 'EastAsianWidth');
@@ -82,7 +86,7 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, :$debug =
         my $bitfield_c = (make-enums(), make-bitfield-rows(), make-point-index(), $int-main).join;
         note "Saving bitfield.c…";
         spurt "$build-folder/bitfield.c", $bitfield_c;
-        spurt "$build-folder/names.c", $name-file ~ "void main (void) \{\n\}\n";
+        spurt "$build-folder/names.c", $name-file;
     }
     say "Took {now - INIT now} seconds.";
 }
@@ -99,35 +103,43 @@ sub Generate_Name_List {
     my $uniname_prefix = $c-type ~ ' ' ~ $uniname_c_name;
     my $null_uniname_post = '[1] = {0}';
     my $t1 = now;
+    my $all-elems;
     for 0..$max -> $cp {
         my str $cp_s = nqp::base_I(nqp::decont($cp), 10);
         if nqp::existskey(%names, $cp_s) {
             my $s := nqp::atkey(%names, $cp_s);
             if $s.contains('<') {
-                nqp::push_s($names_l, $uniname_prefix ~ $cp_s ~ $null_uniname_post);
-                nqp::push_s($uninames_l, $uniname_c_name ~ $cp_s);
+                #nqp::push_s($names_l, $uniname_prefix ~ $cp_s ~ $null_uniname_post);
+                #nqp::push_s($uninames_l, $uniname_c_name ~ $cp_s);
                 next;
             }
             my @a = encode-base40-string($s);
+            my $elems = @a.elems;
+            $all-elems += $elems + 1;
             nqp::push_s($names_l,
                 nqp::unbox_s(
-                    $uniname_prefix ~ $cp_s ~ '[' ~ @a.elems + 1 ~ '] = {' ~ @a.elems ~ ',' ~ @a.join(',') ~ '}'
+                    $elems ~ ',' ~ @a.join(',')
                 )
             );
         }
         else {
-            nqp::push_s($names_l, $uniname_prefix ~ $cp_s ~ $null_uniname_post);
+            #nqp::push_s($names_l, $uniname_prefix ~ $cp_s ~ $null_uniname_post);
         }
-        nqp::push_s($uninames_l, $uniname_c_name ~ $cp_s);
+        #nqp::push_s($uninames_l, $uniname_c_name ~ $cp_s);
     }
-    my $elems = nqp::elems($names_l);
-    nqp::push_s($uninames_l, "\};\n");
-    nqp::push_s($names_l, "\n");
-    my $string = join '',
-                "#define NULL ((void *)0)\n",
-                nqp::join(";\n", $names_l),
-                $c-type ~ " *uninames[$elems] = \{\n",
-                nqp::join(",\n", $uninames_l);
+    #my $elems = nqp::elems($names_l);
+    nqp::push_s($names_l, "\};\n");
+    #nqp::push_s($names_l, "\n");
+    my $string = join( '',
+                "#include <stdio.h>\n",
+                get-base40-c-table(),
+                $c-type ~ ' uninames[' ~ $all-elems ~ '] = {' ~ "\n",
+                #"#define NULL ((void *)0)\n",
+                nqp::join(",\n", $names_l),
+                "$snippets-folder/tail_names.c".IO.slurp,
+                #$c-type ~ " *uninames[$elems] = \{\n",
+                #nqp::join(",\n", $uninames_l,
+                );
     say "Took " ~ now - $t1 ~ " seconds to generate name list";
     return $string;
 }

@@ -17,6 +17,15 @@ sub get-base40-table is export {
 sub get-base40-hash is export {
     %base;
 }
+sub get-base40-c-table is export {
+    my $str = "char ctable[@bases.elems()] = \{\n";
+    my @table;
+    for @bases {
+        @table.push($_ eq "\0" ?? q['\0'] !! "'$_'");
+    }
+    $str ~= @table.join(',') ~ "\n\};\n";
+    return $str;
+}
 sub test-points {
     my $new;
     my $old;
