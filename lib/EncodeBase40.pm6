@@ -2,7 +2,7 @@
 # This is a script to encode strings using base 40 encoding.
 # This can save space.
 use v6;
-our @bases = '\0','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O',
+our @bases = "\0",'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O',
     'P','Q','R','S','T','U','V','W','X','Y','Z','0','1','2','3','4','5','6',
     '7','8','9',' ','-', '\a';
 our @shift-level-one;
@@ -47,8 +47,8 @@ sub get-base40-c-table is export {
     my @s_table;
     for @bases {
         my $string = "'$_'";
-        $string = q['\0'] if $string eq "\0";
-        $string = q['\a'] if $string eq "\a";
+        $string = q['\0'] if $string eq "'\0'";
+        $string = q['\a'] if $string eq "'\a'";
         @c_table.push($string);
     }
     $str ~= @c_table.join(',') ~ "\n\};\n";

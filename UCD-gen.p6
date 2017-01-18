@@ -101,11 +101,13 @@ sub Generate_Name_List {
     my $max = %names.keys.map({$^a.Int}).max;
     my %shift-one; # Stores the word to number mappings for the first shift level
     my %shift-two; # Stores it for the second shift level
+    my %shift-three;
     my $no-empty = True;
     my %seen-words;
     sub get-shift-levels {
         my %seen-words-shift-one; # Stores the words seen, and how many bytes we will save if we
         my %seen-words-shift-two; # shift once or twice
+        my %seen-words-shift-three;
         my $standard-charcount = 0;
         for 0..$max -> $cp {
             my str $cp_s = nqp::base_I(nqp::decont($cp), 10);
@@ -114,11 +116,12 @@ sub Generate_Name_List {
                 if $s.contains('<') {
                     next;
                 }
-                for $s.words {
+                for $s.split(/' '|'-'/) {
                     %seen-words{$_}++;
                     $standard-charcount += $_.chars + 1;
                     %seen-words-shift-one{$_} += (.chars * 2/3) - 2/3 * 2; # Calculate how much we save if we shorten it
                     %seen-words-shift-two{$_} += (.chars * 2/3) - 2/3 * 3; # for first and second shifts
+                    %seen-words-shift-three{$_} += (.chars * 2/3) - 2/3 * 4;
                 }
             }
         }
@@ -136,6 +139,7 @@ sub Generate_Name_List {
         for %seen-words-shift-one.sort(-*.value) {
             #.say;
             %shift-one{.key} = $i;
+            #say "shift one $_.perl()";
             $saved-one += .value;
             $i++;
             last if $i > 40;
@@ -146,15 +150,40 @@ sub Generate_Name_List {
         for %seen-words-shift-two.sort(-*.value) {
             next if %shift-one{.key}:exists;
             %shift-two{.key} = $j;
+            #say "shift two $_.perl()";
             $saved-two += .value;
             $j++;
             last if $j > 40;
         }
-        my $saved = $saved-one + $saved-two;
+        my $k = 0;
+        my $saved-three;
+        for %seen-words-shift-three.sort(-*.value) {
+            next if %shift-one{.key}:exists or %shift-two{.key}:exists;
+            %shift-three{.key} = $k;
+            #say "shift two $_.perl()";
+            $saved-three += .value;
+            $k++;
+            last if $k > 40;
+        }
+        for %shift-one.sort(+*.value) -> $pair {
+            my $saved = %seen-words-shift-one{$pair.key};
+            say "$pair.key() $saved bytes" if $debug-global;
+        }
         say "Can save: " ~ $saved-two / 1000 ~ " KB with the second shift level";
-        say "Can save: " ~ $saved / 1000 ~ " KB with both levels";
-        say "Shift one: " ~ %shift-one.perl;
-        say "Shift two: " ~ %shift-two.perl;
+        say "\n\nSAVED WITH SHIFT TWO";
+        for %shift-two.sort(+*.value) -> $pair {
+            my $saved = %seen-words-shift-two{$pair.key};
+            say "$pair.key() $saved bytes" if $debug-global;
+        }
+        say "Can save: " ~ $saved-three / 1000 ~ " KB with the third shift level";
+
+        say "\n\nSAVED WITH SHIFT THREE";
+        for %shift-three.sort(+*.value) -> $pair {
+            my $saved = %seen-words-shift-three{$pair.key};
+            say "$pair.key() $saved bytes" if $debug-global;
+        }
+        my $saved = $saved-one + $saved-two + $saved-three;
+        say "Can save: " ~ $saved / 1000 ~ " KB with all three levels";
     }
     get-shift-levels();
     set-shift-levels(%shift-one);
@@ -174,11 +203,11 @@ sub Generate_Name_List {
                 }
                 next;
             }
-            my @a = encode-base40-string($s);
+            my @a = encode-base40-string($s ~ "\0");
             my $elems = @a.elems;
-            $all-elems += $elems + 1;
+            $all-elems += $elems;
             nqp::push_s($names_l,
-                $elems ~ ',' ~ @a.join(',') ~ ',' ~ " /* $s */"
+                @a.join(',') ~ ',' ~ " /* $s */"
             );
         }
         # If we have no name just push a 0
