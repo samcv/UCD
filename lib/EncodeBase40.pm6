@@ -20,6 +20,8 @@ sub init-shift-hashes {
         for ^@shift-level-one.elems {
             %shift-one{@shift-level-one[$_]} = $_;
         }
+        dd @shift-level-one;
+        dd %shift-one;
     }
     if @shift-level-one and !%shift-two {
         for ^@shift-level-one.elems {
@@ -53,7 +55,7 @@ sub get-base40-c-table is export {
     }
     $str ~= @c_table.join(',') ~ "\n\};\n";
     if @shift-level-one {
-        @shift-level-one.shift;
+        @shift-level-one.pop;
         for @shift-level-one {
             @s_table.push(qq["$_"]);
         }

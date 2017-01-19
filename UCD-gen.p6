@@ -191,6 +191,7 @@ sub Generate_Name_List {
     my $c-type = compute-type(40**3);
     my $t1 = now;
     my $all-elems;
+    my int $longest-name;
     for 0..$max -> $cp {
         my str $cp_s = nqp::base_I(nqp::decont($cp), 10);
         if nqp::existskey(%names, $cp_s) {
@@ -206,6 +207,7 @@ sub Generate_Name_List {
             my @a = encode-base40-string($s ~ "\0");
             my $elems = @a.elems;
             $all-elems += $elems;
+            $longest-name = $s.chars if $s.chars > $longest-name;
             nqp::push_s($names_l,
                 @a.join(',') ~ ',' ~ " /* $s */"
             );
@@ -219,10 +221,13 @@ sub Generate_Name_List {
     nqp::push_s($names_l, "\};\n");
     my $string = join( '',
                 "#include <stdio.h>\n",
+                "#include <stdint.h>\n",
+                "#include <string.h>\n",
                 "#define uninames_elems $all-elems\n",
                 get-base40-c-table(),
                 $c-type ~ ' uninames[' ~ $all-elems ~ '] = {' ~ "\n",
                 nqp::join("\n", $names_l),
+                "#define LONGEST_NAME $longest-name\n",
                 "$snippets-folder/tail_names.c".IO.slurp,
                 );
     say "Took " ~ now - $t1 ~ " seconds to generate name list";
