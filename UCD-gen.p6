@@ -116,7 +116,7 @@ sub Generate_Name_List {
                 if $s.contains('<') {
                     next;
                 }
-                for $s.split(/' '|'-'/) {
+                for $s.split([' ','-']) {
                     %seen-words{$_}++;
                     $standard-charcount += $_.chars + 1;
                     %seen-words-shift-one{$_} += (.chars * 2/3) - 2/3 * 2; # Calculate how much we save if we shorten it
@@ -238,7 +238,7 @@ sub DerivedNumericValues ( Str $filename ) {
     my %denominator-seen;
     for slurp-lines($filename) {
         next if skip-line($_);
-        my @parts = .split-trim(/';'|'#'/);
+        my @parts = .split-trim([';','#']);
         my $number = @parts[3];
         my $cp = @parts[0];
         my ($numerator, $denominator);
@@ -261,7 +261,7 @@ sub binary-property ( Int $column, Str $filename ) {
     my %props-seen;
     for slurp-lines($filename) {
         next if skip-line($_);
-        my @parts = .split-trim(/';'|'#'/, $column + 2);
+        my @parts = .split-trim([';','#'], $column + 2);
         my $property = @parts[$column];
         %props-seen{$property} = True unless %props-seen{$property};
         my $range = @parts[0];
@@ -277,7 +277,7 @@ sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filenam
     my %points-by-range;
     for slurp-lines($filename) {
         next if skip-line($_);
-        my @parts = .split-trim(/';'|'#'/, $column + 2);
+        my @parts = .split-trim([';','#'], $column + 2);
         my $range = @parts[0];
         my $prop-val = @parts[$column];
         %seen-values{$prop-val} = True;
