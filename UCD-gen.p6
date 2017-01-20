@@ -142,7 +142,7 @@ sub Generate_Name_List {
             #say "shift one $_.perl()";
             $saved-one += .value;
             $i++;
-            last if $i > 40;
+            last if $i >= 40;
         }
         say "Can save: " ~ $saved-one / 1000 ~ " KB with first shift level";
         my $saved-two;

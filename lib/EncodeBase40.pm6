@@ -55,7 +55,6 @@ sub get-base40-c-table is export {
     }
     $str ~= @c_table.join(',') ~ "\n\};\n";
     if @shift-level-one {
-        @shift-level-one.pop;
         for @shift-level-one {
             @s_table.push(qq["$_"]);
         }
