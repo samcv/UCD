@@ -1,7 +1,6 @@
 #!/usr/bin/env perl6
 use v6;
 use Test;
-plan 4;
 use lib 'lib';
 use EncodeBase40;
 my $string = 'HERE IS A STRING-';
@@ -20,10 +19,11 @@ my %hash;
 for @array {
     %hash{$_} = $i++;
 }
-set-shift-levels(%hash);
+#i  nit-shift-hashes(@array);
 $string = "PLUS";
 my @two = encode-base40-string($string);
 #say @two.perl ~ "XXX";
 is decode-base40-nums(@two), $string, "'$string' can be round-tripped with shift set, when it's the last shift value";
 $string = "CAPITAL";
 is decode-base40-nums(encode-base40-string($string)), $string, "'$string' can be round-tripped with shift set, it's the last shift value";
+done-testing;

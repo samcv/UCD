@@ -6,6 +6,9 @@ my $prefix = 'const static ';
 sub get-prefix is export {
     $prefix;
 }
+sub break-into-lines ( Str $breakpoint, Str $string ) is export {
+    $string.subst(/.**71..79$breakpoint/, "$0\n");
+}
 augment class Str {
     multi method split-trim ( Str $delimiter, Int $limit? ) {
         $limit ?? self.split($delimiter, $limit).».trim

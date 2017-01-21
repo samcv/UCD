@@ -102,8 +102,12 @@ sub Generate_Name_List {
     my %shift-one; # Stores the word to number mappings for the first shift level
     my %shift-two; # Stores it for the second shift level
     my %shift-three;
+    my @shift-one-array;
     my $no-empty = True;
     my %seen-words;
+    class seen-words {
+        has %.seen-words;
+    }
     sub get-shift-levels {
         my %seen-words-shift-one; # Stores the words seen, and how many bytes we will save if we
         my %seen-words-shift-two; # shift once or twice
@@ -137,9 +141,9 @@ sub Generate_Name_List {
         my $saved-one = 0;
         my $i = 0;
         for %seen-words-shift-one.sort(-*.value) {
-            #.say;
+            @shift-one-array.push(.key);
+            say "KEY $_.key()";
             %shift-one{.key} = $i;
-            #say "shift one $_.perl()";
             $saved-one += .value;
             $i++;
             last if $i >= 40;
@@ -150,7 +154,6 @@ sub Generate_Name_List {
         for %seen-words-shift-two.sort(-*.value) {
             next if %shift-one{.key}:exists;
             %shift-two{.key} = $j;
-            #say "shift two $_.perl()";
             $saved-two += .value;
             $j++;
             last if $j > 40;
@@ -160,7 +163,6 @@ sub Generate_Name_List {
         for %seen-words-shift-three.sort(-*.value) {
             next if %shift-one{.key}:exists or %shift-two{.key}:exists;
             %shift-three{.key} = $k;
-            #say "shift two $_.perl()";
             $saved-three += .value;
             $k++;
             last if $k > 40;
@@ -186,11 +188,12 @@ sub Generate_Name_List {
         say "Can save: " ~ $saved / 1000 ~ " KB with all three levels";
     }
     get-shift-levels();
-    set-shift-levels(%shift-one);
+    #init-shift-hashes(@shift-one-array);
+    my $base = base40-string.new(shift-level-one => @shift-one-array);
     my $names_l := nqp::list_s;
     my $c-type = compute-type(40**3);
     my $t1 = now;
-    my $all-elems;
+    my Int $all-elems;
     my int $longest-name;
     for 0..$max -> $cp {
         my str $cp_s = nqp::base_I(nqp::decont($cp), 10);
@@ -199,17 +202,18 @@ sub Generate_Name_List {
             # XXX for now we just skip these
             if $s.contains('<') {
                 unless $no-empty {
-                    nqp::push_s($names_l, "0, /* empty: $s */");
+                    #nqp::push_s($names_l, "0, /* empty: $s */");
                     $all-elems++;
                 }
                 next;
             }
-            my @a = encode-base40-string($s ~ "\0");
-            my $elems = @a.elems;
+            my $a = base40-string.new(shift-level-one => @shift-level-one);
+            $a.push($s ~ "\0");
+            my $elems = $a.List.elems;
             $all-elems += $elems;
             $longest-name = $s.chars if $s.chars > $longest-name;
             nqp::push_s($names_l,
-                @a.join(',') ~ ',' ~ " /* $s */"
+                $a.List.join(',') ~ ',' ~ " /* $s */"
             );
         }
         # If we have no name just push a 0
@@ -219,12 +223,14 @@ sub Generate_Name_List {
         }
     }
     nqp::push_s($names_l, "\};\n");
+    say "CTABLE:[$base.get-c-table]";
+    say "base bases:[$base.bases()";
     my $string = join( '',
                 "#include <stdio.h>\n",
                 "#include <stdint.h>\n",
                 "#include <string.h>\n",
                 "#define uninames_elems $all-elems\n",
-                get-base40-c-table(),
+                $base.get-c-table,
                 $c-type ~ ' uninames[' ~ $all-elems ~ '] = {' ~ "\n",
                 nqp::join("\n", $names_l),
                 "#define LONGEST_NAME $longest-name\n",

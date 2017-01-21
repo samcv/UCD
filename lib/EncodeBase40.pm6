@@ -7,30 +7,96 @@ our @bases = "\0",'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O',
     '7','8','9',' ','-', '\a';
 our @shift-level-one;
 our @shift-level-two;
+our $pushed-strings;
+our %base;
+our %shift-one;
+our %shift-two;
+class base40-string {
+    has @.bases = "\0",'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O',
+        'P','Q','R','S','T','U','V','W','X','Y','Z','0','1','2','3','4','5','6',
+        '7','8','9',' ','-', '\a';
+    has @.shift-level-one;
+    has Str $.to-encode-str;
+    has Str $.encoded-str;
+    has %!shift-one;
+    has @!base40-nums;
+    method init-globals {
+        %shift-one = %!shift-one;
+        @bases = @.bases;
+        @shift-level-one = @.shift-level-one;
+    }
+    method TWEAK {
+        if @!shift-level-one {
+            self.set-shift-level-one(@!shift-level-one);
+        }
+    }
+    method set-shift-level-one ( @things where { .all ~~ Str and .elems <= 40 } ) {
+        for ^@!shift-level-one.elems {
+            %!shift-one{@!shift-level-one[$_]} = $_;
+        }
+        self.init-globals;
+    }
+    method push ( Str $string ) {
+        if $!to-encode-str {
+            $!to-encode-str ~= "\0" ~ $string;
+        }
+        else {
+            $!to-encode-str = $string;
+        }
+    }
+    method get-base40 {
+        self.init-globals;
+        if $!to-encode-str.defined and $!to-encode-str ne '' {
+            init-shift-hashes(@!shift-level-one) if @!shift-level-one;
+            @!base40-nums.append( encode-base40-string($!to-encode-str) );
+            $!encoded-str ~= $!to-encode-str;
+            $!to-encode-str = '';
+        }
+        @!base40-nums;
+    }
+    method get-c-table {
+        self.init-globals;
+        get-base40-c-table(@!shift-level-one, @!bases);
+    }
+    method elems {
+        @!base40-nums.elems;
+    }
+    method List {
+        self.init-globals;
+        self.get-base40;
+    }
+    method Str {
+        $!encoded-str;
+    }
+}
+
+# I
 # If we end up needing more characters we can always use one of the null values to denote "SHIFT"
 # and encode a second level of characters as well
-my %base;
-my %shift-one;
-my %shift-two;
+
 for ^@bases.elems {
     %base{@bases[$_]} = $_;
 }
-sub init-shift-hashes {
-    if @shift-level-one and !%shift-one {
-        for ^@shift-level-one.elems {
-            %shift-one{@shift-level-one[$_]} = $_;
+sub init-shift-hashes (@sub-shift-level-one?) is export {
+    if @sub-shift-level-one {
+        %shift-one := {};
+        for ^@sub-shift-level-one.elems {
+            %shift-one{@sub-shift-level-one[$_]} = $_;
         }
-        dd @shift-level-one;
-        dd %shift-one;
+        @shift-level-one = @sub-shift-level-one;
     }
-    if @shift-level-one and !%shift-two {
+    elsif @shift-level-one {
+        %shift-one := {};
         for ^@shift-level-one.elems {
             %shift-one{@shift-level-one[$_]} = $_;
         }
+    }
+    else {
+        note "No \@shift-level-one found";
     }
 }
 sub set-shift-levels ( %shift-level-one ) is export {
-    for %shift-level-one.sort(*.value) -> $pair {
+    for %shift-level-one.sort(+(*.value)) -> $pair {
         push @shift-level-one, $pair.key;
     }
 }
@@ -43,7 +109,12 @@ sub get-base40-shift-one-table is export {
 sub get-base40-hash is export {
     %base;
 }
-sub get-base40-c-table is export {
+sub get-base40-c-table (@shift-level-one?,
+    @bases = (
+    "\0",'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O',
+    'P','Q','R','S','T','U','V','W','X','Y','Z','0','1','2','3','4','5','6',
+    '7','8','9',' ','-', '\a')
+    ) is export {
     my $str = "char ctable[@bases.elems()] = \{\n";
     my @c_table;
     my @s_table;
@@ -55,6 +126,7 @@ sub get-base40-c-table is export {
     }
     $str ~= @c_table.join(',') ~ "\n\};\n";
     if @shift-level-one {
+        say "detected shift level one in making c table";
         for @shift-level-one {
             @s_table.push(qq["$_"]);
         }
@@ -75,9 +147,14 @@ sub test-points {
     say "new $new old $old. diff: {$old - $new}";
 
 }
-sub encode-base40-string ( Str $string is copy ) is export {
-    init-shift-hashes();
+sub encode-base40-string ( Str $string is copy, base40-string $self? ) is export {
+    if $self {
+        init-shift-hashes($self.shift-level-one);
+    }
     if @shift-level-one {
+        if !%shift-one {
+            init-shift-hashes(@shift-level-one);
+        }
         for @shift-level-one -> $s_string {
             if $string.contains($s_string) {
                 my $replacement = '{' ~ %shift-one{$s_string} ~ '}';
@@ -86,7 +163,7 @@ sub encode-base40-string ( Str $string is copy ) is export {
         }
 
     }
-    #say "string: $string";
+    #note "string: $string";
     my @items = $string.comb;
     my @coded-nums;
     my $i = 40 ** 2;
@@ -104,8 +181,8 @@ sub encode-base40-string ( Str $string is copy ) is export {
             }
             #say "STR: $str";
             for %base{@bases[@bases.end]}, $str.Int -> $num {
-                #say "num: $num";
                 $triplet += $num * $i;
+
                 #say "triplet: $triplet i: $i";
                 # We have our shift value now, so add it to the @coded-nums
                 # Push the shift character
@@ -113,6 +190,7 @@ sub encode-base40-string ( Str $string is copy ) is export {
                 # XXX Maybe we need to not check if elems == 0 since we may have pulled everything out?
                 if $i < 1 {
                     $i = 40 ** 2;
+
                     @coded-nums.push($triplet);
                     $triplet = 0;
                 }
@@ -135,15 +213,21 @@ sub encode-base40-string ( Str $string is copy ) is export {
     }
     @coded-nums;
 }
-sub decode-base40-nums ( @coded-nums is copy ) is export {
+sub decode-base40-nums ( @coded-nums is copy, :@shift-one? ) is export {
     my @decoded-chars;
+    if @shift-one {
+        init-shift-hashes(@shift-one);
+        if !%shift-one {
+            init-shift-hashes(@shift-one);
+        }
+    }
     while @coded-nums {
         my $num = @coded-nums.shift;
         my $shift = False;
         for (1600, 40, 1) -> $j {
             my $char = $num.Int div $j;
-            say "char $char";
-            last if $char == 0 and !$shift;
+            #say "char $char";
+            last if $char == 0 and !$shift and @coded-nums.elems == 0;
             $num -= $char * $j;
             # If it's 39 then it's a shift value
             if $char == 39 and !$shift {
