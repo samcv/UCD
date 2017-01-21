@@ -456,11 +456,11 @@ sub apply-to-points (Int $cp, Hash $hashy) {
         else {
             for $hashy{$key}.keys -> $key2 {
                 if !defined %points{$cp}{$key}{$key2} {
-                    given $key2.WHAT.^name {
-                        when 'Int' {
+                    given $key2 {
+                        when Int {
                             %points{$cp}{$key} = $hashy{$key};
                         }
-                        when 'Bool' {
+                        when Bool {
                             %points{$cp}{$key} = $hashy{$key};
                         }
                         default {
