@@ -11,6 +11,10 @@ augment class Str {
         $limit ?? self.split($delimiter, $limit).».trim
                !! self.split($delimiter).».trim;
     }
+    multi method split-trim ( @needles, Int $limit? ) {
+        $limit ?? self.split(@needles, $limit).».trim
+               !! self.split(@needles).».trim;
+    }
     multi method split-trim ( Regex $regex, Int $limit? ) {
         $limit ?? self.split($regex, $limit).».trim
                !! self.split($regex).».trim;

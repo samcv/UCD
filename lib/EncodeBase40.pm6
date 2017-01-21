@@ -20,6 +20,8 @@ sub init-shift-hashes {
         for ^@shift-level-one.elems {
             %shift-one{@shift-level-one[$_]} = $_;
         }
+        dd @shift-level-one;
+        dd %shift-one;
     }
     if @shift-level-one and !%shift-two {
         for ^@shift-level-one.elems {
@@ -53,7 +55,6 @@ sub get-base40-c-table is export {
     }
     $str ~= @c_table.join(',') ~ "\n\};\n";
     if @shift-level-one {
-        @shift-level-one.shift;
         for @shift-level-one {
             @s_table.push(qq["$_"]);
         }
@@ -108,7 +109,7 @@ sub encode-base40-string ( Str $string is copy ) is export {
                 #say "triplet: $triplet i: $i";
                 # We have our shift value now, so add it to the @coded-nums
                 # Push the shift character
-                $i = $i / 40;
+                $i = $i div 40;
                 # XXX Maybe we need to not check if elems == 0 since we may have pulled everything out?
                 if $i < 1 {
                     $i = 40 ** 2;
@@ -125,7 +126,7 @@ sub encode-base40-string ( Str $string is copy ) is export {
 
         die "Can't find this letter in table “$item”" unless %base{$item}:exists;
         $triplet += %base{$item} * $i;
-        $i = $i / 40;
+        $i = $i div 40;
         if $i < 1 or @items.elems == 0 {
             $i = 40 ** 2;
             @coded-nums.push($triplet);

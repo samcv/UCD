@@ -116,7 +116,7 @@ sub Generate_Name_List {
                 if $s.contains('<') {
                     next;
                 }
-                for $s.split(/' '|'-'/) {
+                for $s.split([' ','-']) {
                     %seen-words{$_}++;
                     $standard-charcount += $_.chars + 1;
                     %seen-words-shift-one{$_} += (.chars * 2/3) - 2/3 * 2; # Calculate how much we save if we shorten it
@@ -142,7 +142,7 @@ sub Generate_Name_List {
             #say "shift one $_.perl()";
             $saved-one += .value;
             $i++;
-            last if $i > 40;
+            last if $i >= 40;
         }
         say "Can save: " ~ $saved-one / 1000 ~ " KB with first shift level";
         my $saved-two;
@@ -191,6 +191,7 @@ sub Generate_Name_List {
     my $c-type = compute-type(40**3);
     my $t1 = now;
     my $all-elems;
+    my int $longest-name;
     for 0..$max -> $cp {
         my str $cp_s = nqp::base_I(nqp::decont($cp), 10);
         if nqp::existskey(%names, $cp_s) {
@@ -206,6 +207,7 @@ sub Generate_Name_List {
             my @a = encode-base40-string($s ~ "\0");
             my $elems = @a.elems;
             $all-elems += $elems;
+            $longest-name = $s.chars if $s.chars > $longest-name;
             nqp::push_s($names_l,
                 @a.join(',') ~ ',' ~ " /* $s */"
             );
@@ -219,10 +221,13 @@ sub Generate_Name_List {
     nqp::push_s($names_l, "\};\n");
     my $string = join( '',
                 "#include <stdio.h>\n",
+                "#include <stdint.h>\n",
+                "#include <string.h>\n",
                 "#define uninames_elems $all-elems\n",
                 get-base40-c-table(),
                 $c-type ~ ' uninames[' ~ $all-elems ~ '] = {' ~ "\n",
                 nqp::join("\n", $names_l),
+                "#define LONGEST_NAME $longest-name\n",
                 "$snippets-folder/tail_names.c".IO.slurp,
                 );
     say "Took " ~ now - $t1 ~ " seconds to generate name list";
@@ -233,7 +238,7 @@ sub DerivedNumericValues ( Str $filename ) {
     my %denominator-seen;
     for slurp-lines($filename) {
         next if skip-line($_);
-        my @parts = .split-trim(/';'|'#'/);
+        my @parts = .split-trim([';','#']);
         my $number = @parts[3];
         my $cp = @parts[0];
         my ($numerator, $denominator);
@@ -256,7 +261,7 @@ sub binary-property ( Int $column, Str $filename ) {
     my %props-seen;
     for slurp-lines($filename) {
         next if skip-line($_);
-        my @parts = .split-trim(/';'|'#'/, $column + 2);
+        my @parts = .split-trim([';','#'], $column + 2);
         my $property = @parts[$column];
         %props-seen{$property} = True unless %props-seen{$property};
         my $range = @parts[0];
@@ -272,7 +277,7 @@ sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filenam
     my %points-by-range;
     for slurp-lines($filename) {
         next if skip-line($_);
-        my @parts = .split-trim(/';'|'#'/, $column + 2);
+        my @parts = .split-trim([';','#'], $column + 2);
         my $range = @parts[0];
         my $prop-val = @parts[$column];
         %seen-values{$prop-val} = True;
@@ -451,11 +456,11 @@ sub apply-to-points (Int $cp, Hash $hashy) {
         else {
             for $hashy{$key}.keys -> $key2 {
                 if !defined %points{$cp}{$key}{$key2} {
-                    given $key2.WHAT.^name {
-                        when 'Int' {
+                    given $key2 {
+                        when Int {
                             %points{$cp}{$key} = $hashy{$key};
                         }
-                        when 'Bool' {
+                        when Bool {
                             %points{$cp}{$key} = $hashy{$key};
                         }
                         default {
