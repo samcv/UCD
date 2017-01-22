@@ -44,13 +44,12 @@ void eat_a_string( Decompressor *ds ) {
             /* Let the two codemes flow out of the queue. */
             memmove(ds->queue, ds->queue + 2, (6 - 2) * 2);
             ds->queue_len -= 2;
-        } else {
+        }
+        else {
             ds->out_buf[ds->out_buf_pos++] = ctable[ds->queue[0]];
-            /*fprintf(stderr, "added character %d\n", ds->queue[0]);*/
             if (ds->queue[0] == 0) {
                 ds->eos_signalled = 1;
                 ds->out_buf_pos = 0;
-                ds->queue_len = 1;
             }
             memmove(ds->queue, ds->queue + 1, (6 - 1) * 2);
             ds->queue_len--;
