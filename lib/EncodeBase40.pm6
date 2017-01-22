@@ -42,7 +42,7 @@ class base40-string {
     }
     multi method push ( Str $string ) {
         if $!to-encode-str {
-            $!to-encode-str ~= "\0" ~ $string;
+            $!to-encode-str ~= $string ~ "\0";
         }
         else {
             $!to-encode-str = $string;
@@ -170,20 +170,24 @@ sub encode-base40-string ( Str $string is copy, base40-string $self? ) is export
 
     }
     #note "string: $string";
-    my @items = $string.comb;
+    my int $items_f = $string.chars;
+    my int $items_i = 0;
     my $coded-nums := nqp::list_s;
-    my $i = 40 ** 2;
-    my $triplet = 0;
-    while @items {
-        my $item = @items.shift;
+    my int $i = 40 ** 2;
+    my int $triplet = 0;
+    sub items-elems {
+        $items_i - $items_f - 1;
+    }
+    while $items_i < $items_f {
+        my str $item = nqp::substr($string, $items_i++, 1);
         # This is a shifted value, so process it as such
         if $item eq '{' {
-            my $item = @items.shift;
-            my $str;
+            my str $item = nqp::substr($string, $items_i++, 1);;
+            my str $str;
             # Grab the numbers up until the '}'
             while $item ne '}' {
                 $str ~= $item;
-                $item = @items.shift;
+                $item = nqp::substr($string, $items_i++, 1);
             }
             #say "STR: $str";
             for %base{@bases[@bases.end]}, $str.Int -> $num {
@@ -201,7 +205,7 @@ sub encode-base40-string ( Str $string is copy, base40-string $self? ) is export
                     $triplet = 0;
                 }
             }
-            if @items.elems == 0 {
+            if items-elems() == 0 {
                 nqp::push_s($coded-nums, nqp::base_I(nqp::decont($triplet), 10));
                 $triplet = 0;
             }
@@ -211,7 +215,7 @@ sub encode-base40-string ( Str $string is copy, base40-string $self? ) is export
         die "Can't find this letter in table “$item”" unless %base{$item}:exists;
         $triplet += %base{$item} * $i;
         $i = $i div 40;
-        if $i < 1 or @items.elems == 0 {
+        if $i < 1 or items-elems() == 0 {
             $i = 40 ** 2;
             nqp::push_s($coded-nums, nqp::base_I(nqp::decont($triplet), 10));
             $triplet = 0;
