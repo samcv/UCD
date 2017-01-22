@@ -55,16 +55,16 @@ multi sub compute-type ( Int $max, Int $min = 0 ) is export {
     my $size = $max.base(2).chars / 8;
     my $type;
     if $size < 1 {
-        $type ~= $min >= 0 ?? "unsigned char" !! 'short';
+        $type ~= $min >= 0 ?? 'uint8_t' !! 'int16_t';
     }
     elsif $size <= 2 {
-        $type ~= $min >= 0 ?? 'unsigned short' !! 'int';
+        $type ~= $min >= 0 ?? 'uint16_t' !! 'int32_t';
     }
     elsif $size <= 4 {
-        $type ~= $min >= 0 ?? 'unsigned int' !! 'long int';
+        $type ~= $min >= 0 ?? 'uint32_t' !! 'int64_t';
     }
     elsif $size <= 8 {
-        $type ~= $min >= 0 ?? 'unsigned long int' !! 'long long int';
+        $type ~= $min >= 0 ?? 'uint64_t' !! 'int128_t';
     }
     else {
         die "Size is $size. Not sure what to do";

@@ -4,7 +4,7 @@ typedef struct Decompressor {
      * consumption. */
     int16_t queue[6];
     /* How many valid entries are currently in the queue? */
-    unsigned short queue_len;
+    uint16_t queue_len;
 
     const unsigned short * input_position;
 
@@ -18,8 +18,8 @@ typedef struct Decompressor {
 } Decompressor;
 
 void digest_one_chunk(Decompressor *ds) {
-    unsigned short num = *(ds->input_position++);
-    unsigned int temp;
+    uint16_t num = *(ds->input_position++);
+    uint32_t temp;
     temp = num / 1600;
     ds->queue[ds->queue_len++] = temp;
     ds->queue[ds->queue_len++] = (num - temp * 1600) / 40;
@@ -59,10 +59,10 @@ void eat_a_string( Decompressor *ds ) {
 }
 
 int main (void) {
-    int cp = 0;
+    int32_t cp = 0;
     Decompressor ds = {};
     ds.input_position = &uninames;
-    while (ds.input_position < uninames + 30) {
+    while (ds.input_position < uninames + uninames_elems + 1) {
         eat_a_string(&ds);
         printf("U+%X '%s'\n", cp, ds.out_buf);
         cp++;

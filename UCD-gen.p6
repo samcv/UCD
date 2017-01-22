@@ -85,7 +85,7 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$de
         END2
         $int-main ~= $var;
         unless $names-only {
-            my $bitfield_c = (make-enums(), make-bitfield-rows(), make-point-index(), $int-main).join;
+            my $bitfield_c = ("#include <stdint.h>\n", make-enums(), make-bitfield-rows(), make-point-index(), $int-main).join;
             note "Saving bitfield.c…";
             spurt "$build-folder/bitfield.c", $bitfield_c;
         }
