@@ -52,22 +52,41 @@ multi sub compute-type ( Str $str ) {
 multi sub compute-type ( Int $max, Int $min = 0 ) is export {
     say "max: $max, min: $min";
     die "Not sure how to handle min being higher than max. Min: $min, Max: $max" if $min.abs > $max;
-    my $size = $max.base(2).chars / 8;
+    my $bit-size = $max.base(2).chars;
     my $type;
-    if $size < 1 {
-        $type ~= $min >= 0 ?? 'uint8_t' !! 'int16_t';
-    }
-    elsif $size <= 2 {
-        $type ~= $min >= 0 ?? 'uint16_t' !! 'int32_t';
-    }
-    elsif $size <= 4 {
-        $type ~= $min >= 0 ?? 'uint32_t' !! 'int64_t';
-    }
-    elsif $size <= 8 {
-        $type ~= $min >= 0 ?? 'uint64_t' !! 'int128_t';
+    if $min >= 0 {
+        if $max <= 2**8 - 1 {
+            $type ~= 'uint8_t';
+        }
+        elsif $max <= 2**16 - 1 {
+            $type ~= 'uint16_t';
+        }
+        elsif $max <= 2**32 - 1 {
+            $type ~= 'uint32_t';
+        }
+        elsif $max <= 2**64 - 1 {
+            $type ~= 'uint64_t';
+        }
+        else {
+            die "Size is $bit-size. Not sure what to do";
+        }
     }
     else {
-        die "Size is $size. Not sure what to do";
+        if $max <= 2**7 - 1 {
+            $type ~= 'int8_t';
+        }
+        elsif $max <= 2**15 - 1 {
+            $type ~= 'int16_t';
+        }
+        elsif $max <= 2**31 - 1 {
+            $type ~= 'int32_t';
+        }
+        elsif $max <= 2**63 - 1 {
+            $type ~= 'int64_t';
+        }
+        else {
+            die "Size is $bit-size. Not sure what to do";
+        }
     }
     $prefix ~ $type;
 }

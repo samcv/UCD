@@ -13,6 +13,8 @@ my Str $snippets-folder = "snippets";
 if !$build-folder.IO.d {
   mkdir $build-folder;
 }
+# stores lines of bitfield.h
+our @bitfield-h;
 my %points;
 my %names = nqp::hash;
 my %binary-properties;
@@ -25,17 +27,20 @@ my %point-index = nqp::hash;
 my $debug-global = False;
 my int $bin-index = -1;
 my $indent = "\c[SPACE]" x 4;
-sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$debug = False, Bool :$names-only = False ) {
+sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$debug = False, Bool :$names-only = False, Bool :$numeric-value-only = False ) {
     $debug-global = $debug;
+    my $name-file;
+    DerivedNumericValues('extracted/DerivedNumericValues');
     UnicodeData("UnicodeData", $less);
-    my $name-file = Generate_Name_List();
-    unless $names-only {
+    unless $numeric-value-only {
+        $name-file = Generate_Name_List();
+    }
+    unless $names-only or $numeric-value-only {
         enumerated-property(1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType');
 
         enumerated-property(1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
     }
-    unless $less or $names-only {
-        DerivedNumericValues('extracted/DerivedNumericValues');
+    unless $less or $names-only or $numeric-value-only {
         enumerated-property(1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth');
         enumerated-property(1, 'N', 'East_Asian_Width', 'EastAsianWidth');
         enumerated-property(1, '', 'Jamo_Short_Name', 'Jamo');
@@ -85,12 +90,13 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$de
         END2
         $int-main ~= $var;
         unless $names-only {
-            my $bitfield_c = ("#include <stdint.h>\n", make-enums(), make-bitfield-rows(), make-point-index(), $int-main).join;
+            my $bitfield_c = (“#include "bitfield.h"\n#include <stdint.h>\n”, make-enums(), make-bitfield-rows(), make-point-index(), $int-main).join;
             note "Saving bitfield.c…";
-            spurt "$build-folder/bitfield.c", $bitfield_c;
+            "$build-folder/bitfield.c".IO.spurt($bitfield_c);
+            "$build-folder/bitfield.h".IO.spurt(@bitfield-h.join("\n"));
         }
         note "Saving names.c…";
-        spurt "$build-folder/names.c", $name-file;
+        "$build-folder/names.c".IO.spurt($name-file) if $name-file;
     }
     say "Took {now - INIT now} seconds.";
 }
@@ -426,7 +432,6 @@ sub make-enums {
     note "Making enums…";
     my @enums;
     say Dump %enumerated-properties if $debug-global;
-    my $header;
     for %enumerated-properties.keys -> $prop {
         my str $enum-str;
         my $type = %enumerated-properties{$prop}<type>;
@@ -451,11 +456,10 @@ sub make-enums {
         # Create the #define's for the Property Value's
         for $rev-hash.kv -> $enum-no, $prop-val {
             my $prop-val-name = $prop-val.subst('-', 'minus');
-            $header ~= "#define Uni_PVal_{$prop.uc}_$prop-val-name $enum-no\n";
+            @bitfield-h.push("#define Uni_PVal_{$prop.uc}_$prop-val-name $enum-no");
         }
         @enums.push($enum-str);
     }
-    @enums.unshift($header);
     @enums.join("\n");
 }
 sub make-point-index (:$less) {
@@ -496,22 +500,22 @@ sub make-bitfield-rows {
     my Int $i = 0;
     my str $binary-struct-str;
     # Create the order of the struct
-    my str $header = "struct binary_prop_bitfield  \{\n";
+    @bitfield-h.push("struct binary_prop_bitfield  \{");
     for %binary-properties.keys.sort -> $bin {
         %prop-to-code{$bin} = $i;
         %code-to-prop{$i} = $bin;
         $i++;
-        $header = nqp::concat($header,"    unsigned int $bin :1;\n");
+        @bitfield-h.push("    unsigned int $bin :1;");
     }
     for %enumerated-properties.keys.sort({%enumerated-properties{$^a}<bitwidth> cmp %enumerated-properties{$^b}<bitwidth>}) -> $property {
         %prop-to-code{$property} = $i;
         %code-to-prop{$i} = $property;
         $i++;
         my $bitwidth = %enumerated-properties{$property}<bitwidth>;
-        $header = nqp::concat($header, "    unsigned int $property :$bitwidth;\n");
+        @bitfield-h.push("    unsigned int $property :$bitwidth;");
     }
-    $header = nqp::concat($header, "\};\n");
-    $header = nqp::concat($header, "typedef struct binary_prop_bitfield binary_prop_bitfield;\n");
+    @bitfield-h.push("\};");
+    @bitfield-h.push("typedef struct binary_prop_bitfield binary_prop_bitfield;");
     my $bitfield-rows := nqp::list_s;
     my %bitfield-rows-seen = nqp::hash;
     my @code-to-prop-keys = %code-to-prop.keys.sort(+*);
@@ -568,7 +572,6 @@ sub make-bitfield-rows {
     }
     $binary-struct-str = nqp::join("\n", $bitfield-rows);
     my @array;
-    push @array, $header;
     my $prefix = get-prefix();
     push @array, qq:to/END/;
     #include <stdio.h>
