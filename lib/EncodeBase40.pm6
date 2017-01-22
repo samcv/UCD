@@ -2,6 +2,7 @@
 # This is a script to encode strings using base 40 encoding.
 # This can save space.
 use v6;
+use nqp;
 our @bases = "\0",'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O',
     'P','Q','R','S','T','U','V','W','X','Y','Z','0','1','2','3','4','5','6',
     '7','8','9',' ','-', '\a';
@@ -19,7 +20,7 @@ class base40-string {
     has Str $.to-encode-str;
     has Str $.encoded-str;
     has %!shift-one;
-    has @!base40-nums;
+    my $base40-nums := nqp::list_s;
     method init-globals {
         %shift-one = %!shift-one;
         @bases = @.bases;
@@ -51,25 +52,27 @@ class base40-string {
         self.init-globals;
         if $!to-encode-str.defined and $!to-encode-str ne '' {
             init-shift-hashes(@!shift-level-one) if @!shift-level-one;
-            @!base40-nums.append( encode-base40-string($!to-encode-str) );
+            die if self.elems > 0;
+            $base40-nums := encode-base40-string($!to-encode-str);
             $!encoded-str ~= $!to-encode-str;
             $!to-encode-str = '';
         }
-        @!base40-nums;
+        $base40-nums;
     }
     method get-c-table {
         self.init-globals;
         get-base40-c-table(@!shift-level-one, @!bases);
     }
     method elems {
-        @!base40-nums.elems;
-    }
-    method List {
-        self.init-globals;
-        self.get-base40;
+        nqp::elems($base40-nums);
     }
     method Str {
-        $!encoded-str;
+        self.get-base40;
+        nqp::box_s($!encoded-str, Str);
+    }
+    method join (Str $joiner) {
+        self.get-base40;
+        nqp::join($joiner, $base40-nums);
     }
 }
 
@@ -168,7 +171,7 @@ sub encode-base40-string ( Str $string is copy, base40-string $self? ) is export
     }
     #note "string: $string";
     my @items = $string.comb;
-    my @coded-nums;
+    my $coded-nums := nqp::list_s;
     my $i = 40 ** 2;
     my $triplet = 0;
     while @items {
@@ -194,12 +197,12 @@ sub encode-base40-string ( Str $string is copy, base40-string $self? ) is export
                 if $i < 1 {
                     $i = 40 ** 2;
 
-                    @coded-nums.push($triplet);
+                    nqp::push_s($coded-nums, nqp::base_I(nqp::decont($triplet), 10));
                     $triplet = 0;
                 }
             }
             if @items.elems == 0 {
-                @coded-nums.push($triplet);
+                nqp::push_s($coded-nums, nqp::base_I(nqp::decont($triplet), 10));
                 $triplet = 0;
             }
             next;
@@ -210,11 +213,11 @@ sub encode-base40-string ( Str $string is copy, base40-string $self? ) is export
         $i = $i div 40;
         if $i < 1 or @items.elems == 0 {
             $i = 40 ** 2;
-            @coded-nums.push($triplet);
+            nqp::push_s($coded-nums, nqp::base_I(nqp::decont($triplet), 10));
             $triplet = 0;
         }
     }
-    @coded-nums;
+    $coded-nums;
 }
 sub decode-base40-nums ( @coded-nums is copy, :@shift-one? ) is export {
     my @decoded-chars;

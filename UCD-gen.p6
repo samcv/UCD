@@ -3,6 +3,7 @@ use nqp;
 use Data::Dump;
 use lib 'lib';
 use UCDlib;
+use seenwords;
 use EncodeBase40;
 BEGIN say "Initializing…";
 INIT  say "Starting…";
@@ -97,18 +98,19 @@ sub dump {
     say 'Dumping %points';
     Dump-Range(900..1000, %points);
 }
+
 sub Generate_Name_List {
+    my $t0_nl = now;
     my $max = %names.keys.map({$^a.Int}).max;
     my %shift-one; # Stores the word to number mappings for the first shift level
     my %shift-two; # Stores it for the second shift level
     my %shift-three;
     my @shift-one-array;
-    my $no-empty = True;
+    my $no-empty = False;
     my %seen-words;
     my base40-string $base40-string;
-    class seen-words {
-        has %.seen-words;
-    }
+
+    my $seen-words = seen-words.new(levels-to-gen => 1);
     sub get-shift-levels {
         my %seen-words-shift-one; # Stores the words seen, and how many bytes we will save if we
         my %seen-words-shift-two; # shift once or twice
@@ -121,63 +123,11 @@ sub Generate_Name_List {
                 if $s.contains('<') {
                     next;
                 }
-                for $s.split([' ','-']) {
-                    %seen-words{$_}++;
-                    $standard-charcount += $_.chars + 1;
-                    %seen-words-shift-one{$_} += (.chars * 2/3) - 2/3 * 2; # Calculate how much we save if we shorten it
-                    %seen-words-shift-two{$_} += (.chars * 2/3) - 2/3 * 3; # for first and second shifts
-                    %seen-words-shift-three{$_} += (.chars * 2/3) - 2/3 * 4;
-                }
+                $seen-words.saw-line($s);
             }
         }
-        my $saved-one = 0;
-        my $i = 0;
-        for %seen-words-shift-one.sort(-*.value) {
-            @shift-one-array.push(.key);
-            %shift-one{.key} = $i;
-            $saved-one += .value;
-            $i++;
-            last if $i >= 40;
-        }
-        $base40-string = $base40-string.new(shift-level-one => @shift-one-array);
-        say "Can save: " ~ $saved-one / 1000 ~ " KB with first shift level";
-        my $saved-two;
-        my $j = 0;
-        for %seen-words-shift-two.sort(-*.value) {
-            next if %shift-one{.key}:exists;
-            %shift-two{.key} = $j;
-            $saved-two += .value;
-            $j++;
-            last if $j > 40;
-        }
-        my $k = 0;
-        my $saved-three;
-        for %seen-words-shift-three.sort(-*.value) {
-            next if %shift-one{.key}:exists or %shift-two{.key}:exists;
-            %shift-three{.key} = $k;
-            $saved-three += .value;
-            $k++;
-            last if $k > 40;
-        }
-        for %shift-one.sort(+*.value) -> $pair {
-            my $saved = %seen-words-shift-one{$pair.key};
-            say "$pair.key() $saved bytes" if $debug-global;
-        }
-        say "Can save: " ~ $saved-two / 1000 ~ " KB with the second shift level";
-        say "\n\nSAVED WITH SHIFT TWO";
-        for %shift-two.sort(+*.value) -> $pair {
-            my $saved = %seen-words-shift-two{$pair.key};
-            say "$pair.key() $saved bytes" if $debug-global;
-        }
-        say "Can save: " ~ $saved-three / 1000 ~ " KB with the third shift level";
+        $base40-string = $base40-string.new(shift-level-one => $seen-words.get-shift-one-array);
 
-        say "\n\nSAVED WITH SHIFT THREE";
-        for %shift-three.sort(+*.value) -> $pair {
-            my $saved = %seen-words-shift-three{$pair.key};
-            say "$pair.key() $saved bytes" if $debug-global;
-        }
-        my $saved = $saved-one + $saved-two + $saved-three;
-        say "Can save: " ~ $saved / 1000 ~ " KB with all three levels";
     }
     get-shift-levels(); # this is the sub directly above
 
@@ -186,6 +136,7 @@ sub Generate_Name_List {
     my $t1 = now;
     my Int $all-elems;
     my int $longest-name;
+    note "Starting generation of codepoint names…";
     for 0..$max -> $cp {
         my str $cp_s = nqp::base_I(nqp::decont($cp), 10);
         if nqp::existskey(%names, $cp_s) {
@@ -206,19 +157,26 @@ sub Generate_Name_List {
             $base40-string.push;
         }
     }
+    say "Took " ~ now - $t1 ~ " secs to go through all codepoints";
+    say "Joining codepoints";
+    my $t2 = now;
+    my $base40-joined = $base40-string.join(',');
+    say "Took " ~ now - $t2 ~ " secs to join all codepoints";
+    my $t3 = now;
     my $string = join( '',
                 "#include <stdio.h>\n",
                 "#include <stdint.h>\n",
                 "#include <string.h>\n",
                 "#define uninames_elems $all-elems\n",
                 $base40-string.get-c-table,
-                $c-type ~ ' uninames[' ~ $base40-string.List.elems ~ '] = {' ~ "\n",
-                $base40-string.List.join(",\n"),
+                $c-type ~ ' uninames[' ~ $base40-string.elems ~ '] = {' ~ "\n",
+                $base40-joined.break-into-lines(','),
                 "\};\n",
                 "#define LONGEST_NAME $longest-name\n",
                 "$snippets-folder/tail_names.c".IO.slurp,
                 );
-    say "Took " ~ now - $t1 ~ " seconds to generate name list";
+    say "Took " ~ now - $t3 ~ " seconds to the final part of name creation";
+    say "NAME GEN: took " ~ now - $t0_nl ~ " seconds to go through all the name generation code";
     return $string;
 }
 sub DerivedNumericValues ( Str $filename ) {
