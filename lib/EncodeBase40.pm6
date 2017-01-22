@@ -36,7 +36,10 @@ class base40-string {
         }
         self.init-globals;
     }
-    method push ( Str $string ) {
+    multi method push {
+        $!to-encode-str ~= "\0";
+    }
+    multi method push ( Str $string ) {
         if $!to-encode-str {
             $!to-encode-str ~= "\0" ~ $string;
         }

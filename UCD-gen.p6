@@ -105,6 +105,7 @@ sub Generate_Name_List {
     my @shift-one-array;
     my $no-empty = True;
     my %seen-words;
+    my base40-string $base40-string;
     class seen-words {
         has %.seen-words;
     }
@@ -129,25 +130,16 @@ sub Generate_Name_List {
                 }
             }
         }
-        my $z = 0;
-        my $weird-saved = 0;
-        for %seen-words.sort(-*.value) -> $pair {
-            last if $z >= 160;
-            $weird-saved += $pair.value * $pair.key.chars - 1;
-        }
-        say "Weird would be $standard-charcount bytes, but could save $weird-saved\n";
-        say "weird total {$standard-charcount - $weird-saved}";
-
         my $saved-one = 0;
         my $i = 0;
         for %seen-words-shift-one.sort(-*.value) {
             @shift-one-array.push(.key);
-            say "KEY $_.key()";
             %shift-one{.key} = $i;
             $saved-one += .value;
             $i++;
             last if $i >= 40;
         }
+        $base40-string = $base40-string.new(shift-level-one => @shift-one-array);
         say "Can save: " ~ $saved-one / 1000 ~ " KB with first shift level";
         my $saved-two;
         my $j = 0;
@@ -187,10 +179,9 @@ sub Generate_Name_List {
         my $saved = $saved-one + $saved-two + $saved-three;
         say "Can save: " ~ $saved / 1000 ~ " KB with all three levels";
     }
-    get-shift-levels();
-    #init-shift-hashes(@shift-one-array);
-    my $base = base40-string.new(shift-level-one => @shift-one-array);
-    my $names_l := nqp::list_s;
+    get-shift-levels(); # this is the sub directly above
+
+    my @names_l;
     my $c-type = compute-type(40**3);
     my $t1 = now;
     my Int $all-elems;
@@ -202,37 +193,28 @@ sub Generate_Name_List {
             # XXX for now we just skip these
             if $s.contains('<') {
                 unless $no-empty {
-                    #nqp::push_s($names_l, "0, /* empty: $s */");
+                    $base40-string.push;
                     $all-elems++;
                 }
                 next;
             }
-            my $a = base40-string.new(shift-level-one => @shift-level-one);
-            $a.push($s ~ "\0");
-            my $elems = $a.List.elems;
-            $all-elems += $elems;
             $longest-name = $s.chars if $s.chars > $longest-name;
-            nqp::push_s($names_l,
-                $a.List.join(',') ~ ',' ~ " /* $s */"
-            );
+            $base40-string.push($s);
         }
         # If we have no name just push a 0
         elsif !$no-empty {
-            nqp::push_s($names_l, '0, /* empty */');
-            $all-elems++;
+            $base40-string.push;
         }
     }
-    nqp::push_s($names_l, "\};\n");
-    say "CTABLE:[$base.get-c-table]";
-    say "base bases:[$base.bases()";
     my $string = join( '',
                 "#include <stdio.h>\n",
                 "#include <stdint.h>\n",
                 "#include <string.h>\n",
                 "#define uninames_elems $all-elems\n",
-                $base.get-c-table,
-                $c-type ~ ' uninames[' ~ $all-elems ~ '] = {' ~ "\n",
-                nqp::join("\n", $names_l),
+                $base40-string.get-c-table,
+                $c-type ~ ' uninames[' ~ $base40-string.List.elems ~ '] = {' ~ "\n",
+                $base40-string.List.join(",\n"),
+                "\};\n",
                 "#define LONGEST_NAME $longest-name\n",
                 "$snippets-folder/tail_names.c".IO.slurp,
                 );
