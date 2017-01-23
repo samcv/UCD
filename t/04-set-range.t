@@ -13,7 +13,7 @@ for 80.. 90 {
 my @r_iter = %ranges.keys.sort(+*);
 my $sr = Set-Range.new;
 for %ranges.keys.sort(+*) {
-    $sr.add-to-range($_);
+    $sr.add-to-range($_, "control");
 }
-is $sr.get-range, { 0 => { first => 0, last => 20 }, 1 => { first => 80, last => 90 } },
+is $sr.get-range, "control" => { 0 => { first => 0, last => 20 }, 1 => { first => 80, last => 90 } },
     "Set-Range tenatively returns the correct value";
