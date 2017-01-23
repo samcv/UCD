@@ -4,35 +4,36 @@ class Set-Range {
     has $.range-no = 0;
     has %!range-nos;
     has $.highest-point;
+
+    method add-to-range-no ( Cool:D $range-no, Cool:D $first, Cool:D $last, Cool:D $name) {
+        if %!range-nos{$range-no}<name> and %!range-nos{$range-no}<name> ne $name {
+            die "Conflicting names {%!range-nos{$range-no}<name>} and $name";
+        }
+        %!range-nos{$range-no}<first> = $first;
+        %!range-nos{$range-no}<last>  = $last;
+        %!range-nos{$range-no}<name>  = $name
+    }
     method add-to-range ( Cool:D $point, Cool:D $item ) is export {
         if $!highest-point.defined && $point <= $!highest-point {
             die "Points must be added in order";
         }
         # If a first point doesn't exist, this is the first point of a new range
         if ! %!range-nos {
-            %!range-nos{$!range-no}<first> = $point;
-            %!range-nos{$!range-no}<last> = $point;
-            %!range-nos{$!range-no}<name> = $item;
+            self.add-to-range-no($!range-no, $point, $point, $item);
         }
         elsif %!range-nos{$!range-no}:exists.not {
-            %!range-nos{$!range-no}<first> = $point;
-            %!range-nos{$!range-no}<last> = $point;
-            %!range-nos{$!range-no}<name> = $item;
+            self.add-to-range-no($!range-no, $point, $point, $item);
         }
         # if the points are just one off we're part of the same range
         elsif %!range-nos{$!range-no}<last> + 1 == $point {
-            die "Conflicting names {%!range-nos{$!range-no}<name>} and $item" if %!range-nos{$!range-no}<name> ne $item;
             %!range-nos{$!range-no}<last> = $point;
         }
         # Otherwise it's part of a new range
         else {
             $!range-no++;
-            %!range-nos{$!range-no}<first> = $point;
-            %!range-nos{$!range-no}<last> = $point;
-            %!range-nos{$!range-no}<name> = $item;
+            self.add-to-range-no($!range-no, $point, $point, $item);
         }
     }
-    method get-range {
-        %!range-nos;
-    }
+    method get-range { %!range-nos       }
+    method elems     { %!range-nos.elems }
 }
