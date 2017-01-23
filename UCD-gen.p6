@@ -3,6 +3,7 @@ use nqp;
 use Data::Dump;
 use lib 'lib';
 use UCDlib;
+use Set-Range;
 use seenwords;
 use EncodeBase40;
 BEGIN say "Initializing…";
@@ -114,6 +115,7 @@ sub Generate_Name_List {
     my @shift-one-array;
     my $no-empty = False;
     my %seen-words;
+    my $set-range = Set-Range.new;
     my base40-string $base40-string;
 
     my $seen-words = seen-words.new(levels-to-gen => 1);
@@ -143,15 +145,16 @@ sub Generate_Name_List {
     my Int $all-elems;
     my int $longest-name;
     note "Starting generation of codepoint names…";
-    for 0..$max -> $cp {
+    my %control-ranges;
+    my $cp_iter = 0..$max;
+    for $cp_iter -> $cp {
         my str $cp_s = nqp::base_I(nqp::decont($cp), 10);
         if nqp::existskey(%names, $cp_s) {
             my $s := nqp::atkey(%names, $cp_s);
             # XXX for now we just skip these
             if $s.contains('<') {
                 unless $no-empty {
-                    $base40-string.push;
-                    $all-elems++;
+                    $set-range.add-to-range($cp_s, $s);
                 }
                 next;
             }
@@ -340,9 +343,9 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
             $suc, $slc, $stc) = @parts;
         my $cp = :16($code-str);
         next if $less != 0 and $cp > $less;
-        if ($name eq '<control>' ) {
-            $name = sprintf '<control-%.4X>', $cp;
-        }
+        #if ($name eq '<control>' ) {
+        #    $name = sprintf '<control-%.4X>', $cp;
+        #}
         my %hash;
         %hash<Unicode_1_Name>            =? $u1name;
         if $name {
@@ -488,6 +491,7 @@ sub make-point-index (:$less) {
     my $string = nqp::join(",", $mapping);
     my int $chars = nqp::chars($string);
     say "Adding nowlines every 50-60 chars";
+    # XXX can use .split-into-lines here
     $string ~~ s:g/(.**70..79',')/$0\n/;
     say now - $t1 ~ "Took this long to concat points";
     my $mapping-str = ("#define max_bitfield_index $point-max\n$type point_index[", $point-max + 1, "] = \{\n    ", $string, "\n\};\n").join;

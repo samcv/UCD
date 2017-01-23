@@ -4,3 +4,4 @@ use Test;
 use lib 'lib';
 use UCDlib;
 is ("a," x 80).break-into-lines(",").lines, ("a," x 40) xx 2;
+done-testing;
