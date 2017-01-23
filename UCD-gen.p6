@@ -146,15 +146,17 @@ sub Generate_Name_List {
     my int $longest-name;
     note "Starting generation of codepoint names…";
     my %control-ranges;
-    my $cp_iter = 0..$max;
-    for $cp_iter -> $cp {
+    for 0..$max -> $cp {
         my str $cp_s = nqp::base_I(nqp::decont($cp), 10);
         if nqp::existskey(%names, $cp_s) {
             my $s := nqp::atkey(%names, $cp_s);
             # XXX for now we just skip these
             if $s.contains('<') {
                 unless $no-empty {
-                    $set-range.add-to-range($cp_s, $s);
+                    if $s eq '<control>' {
+                        $set-range.add-to-range($cp_s, 'uninames', 'sprintf(out, "<control-%.4X>", cp)');
+                    }
+                    $base40-string.push;
                 }
                 next;
             }
@@ -172,11 +174,20 @@ sub Generate_Name_List {
     my $base40-joined = $base40-string.join(',');
     say "Took " ~ now - $t2 ~ " secs to join all codepoints";
     my $t3 = now;
+    my $set-range-func = qq:to/END/;
+    char * get_uninames ( char * out, uint32_t cp ) \{
+            {set-range-generate-c($set-range, "cp")}
+
+        return 0;
+    \}
+    END
+    say "Took " ~ now - $t3 ~ " seconds to generate set range's";
     my $string = join( '',
                 "#include <stdio.h>\n",
                 "#include <stdint.h>\n",
                 "#include <string.h>\n",
                 "#define uninames_elems $all-elems\n",
+                $set-range-func,
                 $base40-string.get-c-table,
                 $c-type ~ ' uninames[' ~ $base40-string.elems ~ '] = {' ~ "\n",
                 $base40-joined.break-into-lines(','),

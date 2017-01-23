@@ -41,22 +41,19 @@ class base40-string {
         $!to-encode-str ~= "\0";
     }
     multi method push ( Str $string ) {
-        if $!to-encode-str {
-            $!to-encode-str ~= $string ~ "\0";
-        }
-        else {
-            $!to-encode-str = $string;
-        }
+        $!to-encode-str ~= $string ~ "\0";
     }
     method get-base40 {
+        note "Running get-base40";
         self.init-globals;
         if $!to-encode-str.defined and $!to-encode-str ne '' {
             init-shift-hashes(@!shift-level-one) if @!shift-level-one;
-            die if self.elems > 0;
+            die if nqp::elems($base40-nums) > 0;
             $base40-nums := encode-base40-string($!to-encode-str);
             $!encoded-str ~= $!to-encode-str;
             $!to-encode-str = '';
         }
+        note "Done running get-base40";
         $base40-nums;
     }
     method get-c-table {
@@ -64,6 +61,7 @@ class base40-string {
         get-base40-c-table(@!shift-level-one, @!bases);
     }
     method elems {
+        self.get-base40;
         nqp::elems($base40-nums);
     }
     method Str {
@@ -72,7 +70,10 @@ class base40-string {
     }
     method join (Str $joiner) {
         self.get-base40;
-        nqp::join($joiner, $base40-nums);
+        note "Starting join process";
+        my str $joined_str = nqp::join($joiner, $base40-nums);
+        note "Done with joining process";
+        $joined_str;
     }
 }
 

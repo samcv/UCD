@@ -61,9 +61,12 @@ void eat_a_string( Decompressor *ds ) {
 int main (void) {
     int32_t cp = 0;
     Decompressor ds = {};
-    ds.input_position = &uninames;
-    while (ds.input_position < uninames + uninames_elems + 1) {
+    ds.input_position = (const unsigned short *) &uninames;
+    while (ds.input_position < uninames + uninames_elems + 50) {
         eat_a_string(&ds);
+        if (ds.out_buf[0] == '\0') {
+            get_uninames(ds.out_buf, cp);
+        }
         printf("U+%X '%s'\n", cp, ds.out_buf);
         cp++;
     }
