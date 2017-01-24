@@ -337,7 +337,13 @@ sub slurp-lines ( Str $filename ) returns Seq {
     "$UNIDATA-folder/$filename.txt".IO.slurp.lines orelse die;
 }
 sub skip-line ( Str $line ) {
-    $line.starts-with('#') or $line.match(/^\s*$/) ?? True !! False;
+    if $line.starts-with('#') or $line eq '' {
+        return True;
+    }
+    elsif $line.starts-with(' ') {
+        return True if $line.match(/^\s*$/);
+    }
+    False;
 }
 sub NameAlias ( Str $property, Str $file ) {
     for slurp-lines $file {
