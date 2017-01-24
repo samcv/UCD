@@ -142,7 +142,6 @@ sub Generate_Name_List {
     my @names_l;
     my $c-type = compute-type(40**3);
     my $t1 = now;
-    my Int $all-elems;
     my int $longest-name;
     note "Starting generation of codepoint names…";
     my %control-ranges;
@@ -153,10 +152,17 @@ sub Generate_Name_List {
             # XXX for now we just skip these
             if $s.contains('<') {
                 unless $no-empty {
-                    if $s eq '<control>' {
-                        $set-range.add-to-range($cp_s, 'uninames', 'sprintf(out, "<control-%.4X>", cp)');
+                    if $s.match(/ ^ '<' (\S+) '>' $ /) {
+                        $set-range.add-to-range: $cp_s, 'uninames', “sprintf(out, "<$0-%.4X>", cp)”;
+                        $base40-string.push;
                     }
-                    $base40-string.push;
+                    # XXX NYI
+                    elsif $s.contains( any('First', 'Last') ) {
+                    }
+                    else {
+                        die "name: $s, cp: $cp";
+                    }
+
                 }
                 next;
             }
@@ -172,7 +178,6 @@ sub Generate_Name_List {
     say "Joining codepoints";
     my $t2 = now;
     my $base40-joined = $base40-string.join(',');
-    say "Took " ~ now - $t2 ~ " secs to join all codepoints";
     my $t3 = now;
     my $set-range-func = qq:to/END/;
     char * get_uninames ( char * out, uint32_t cp ) \{
@@ -186,7 +191,7 @@ sub Generate_Name_List {
                 "#include <stdio.h>\n",
                 "#include <stdint.h>\n",
                 "#include <string.h>\n",
-                "#define uninames_elems $all-elems\n",
+                "#define uninames_elems $base40-string.elems()\n",
                 $set-range-func,
                 $base40-string.get-c-table,
                 $c-type ~ ' uninames[' ~ $base40-string.elems ~ '] = {' ~ "\n",

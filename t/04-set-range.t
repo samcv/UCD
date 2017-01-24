@@ -20,3 +20,5 @@ is $sr.get-range, {
     1 => { first => 80, last => 90, name => 'control' }
 },
     "Set-Range tenatively returns the correct value";
+
+done-testing;
