@@ -1,4 +1,5 @@
 use v6;
+INIT print '.';
 class Set-Range {
     has %.ranges;
     has $.range-no = 0;

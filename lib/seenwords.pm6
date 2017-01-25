@@ -1,5 +1,5 @@
 use v6;
-
+INIT print '.';
 class seen-words is export {
     has $.saved-bytes;
     has %.seen-words;

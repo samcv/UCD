@@ -6,14 +6,10 @@ use UCDlib;
 use Set-Range;
 use seenwords;
 use EncodeBase40;
-BEGIN say "Initializing…";
-INIT  say "Starting…";
-my Str $UNIDATA-folder = "UNIDATA";
+BEGIN print ".";
+INIT  say "\nStarting…";
 my Str $build-folder = "build";
 my Str $snippets-folder = "snippets";
-if !$build-folder.IO.d {
-  mkdir $build-folder;
-}
 # stores lines of bitfield.h
 our @bitfield-h;
 my %points;
@@ -28,8 +24,15 @@ my %point-index = nqp::hash;
 my $debug-global = False;
 my int $bin-index = -1;
 my $indent = "\c[SPACE]" x 4;
+sub start-routine {
+    if !$build-folder.IO.d {
+        say "Creating $build-folder because it does not already exist.";
+        mkdir $build-folder;
+    }
+}
 sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$debug = False, Bool :$names-only = False, Bool :$numeric-value-only = False ) {
     $debug-global = $debug;
+    start-routine();
     my $name-file;
     DerivedNumericValues('extracted/DerivedNumericValues');
     UnicodeData("UnicodeData", $less);
@@ -61,37 +64,16 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$de
     }
     dump-json($dump);
     unless $nomake {
-        my $int-main = Q:to/END/;
-        int main (void) {
-        END
-        my $more = Q:to/END4/;
-            printf("index %i\n", point_index['6']);
-            printf("%lli\n", Numeric_Value_Numerator[mybitfield[point_index['6']].Numeric_Value_Numerator]);
-            unsigned int cp = 0x28;
-        END4
-        $int-main ~= $less == 0 ?? $more !! '';
-        my $var = q:to/END2/;
-            for (int i = 0; i < 150; i++) {
-                int cp_index = (int) point_index[i];
-                if ( cp_index > max_bitfield_index ) {
-                    printf("Character has no values we know of\n");
-                    return 1;
-                }
-                unsigned int cp_GCB = mybitfield[cp_index].Grapheme_Cluster_Break;
-                char * printf_s = "U+%X [%c] Bidi_Mirrored: %i GCB: %s(%i)\n";
-                char * printf_s_control = "U+%X Bidi_Mirrored: %i GCB: %s(%i)\n";
-                if (cp_GCB != Uni_PVal_GRAPHEME_CLUSTER_BREAK_Control ) {
-                    printf(printf_s, i, (char) i, mybitfield[cp_index].Bidi_Mirrored, Grapheme_Cluster_Break[cp_GCB], cp_GCB );
-                }
-                else {
-                    printf(printf_s_control, i, mybitfield[cp_index].Bidi_Mirrored, Grapheme_Cluster_Break[cp_GCB], cp_GCB );
-                }
-            }
+        my $int-main;
+        if $less == 0 {
+            $int-main = slurp-snippets("bitfield", "int-main");
         }
-        END2
-        $int-main ~= $var;
+        else {
+            $int-main = slurp-snippets("bitfield", "int-main", -2);
+        }
+        say ~ "SNIP" ~ slurp-snippets("bitfield", "int-main") ~ "SNIP";
         unless $names-only {
-            my $bitfield_c = (“#include "bitfield.h"\n#include <stdint.h>\n”, make-enums(), make-bitfield-rows(), make-point-index(), $int-main).join;
+            my $bitfield_c = (slurp-snippets("bitfield", "header"), make-enums(), make-bitfield-rows(), make-point-index(), $int-main).join;
             note "Saving bitfield.c…";
             "$build-folder/bitfield.c".IO.spurt($bitfield_c);
             "$build-folder/bitfield.h".IO.spurt(@bitfield-h.join("\n"));
@@ -105,7 +87,6 @@ sub dump {
     say 'Dumping %points';
     Dump-Range(900..1000, %points);
 }
-
 sub Generate_Name_List {
     my $t0_nl = now;
     my $max = %names.keys.map({$^a.Int}).max;
@@ -331,19 +312,6 @@ sub tweak_nfg_qc {
             %points{$code}<NFG_QC>= False if %points{$code}{$prop};
         }
     }
-}
-sub slurp-lines ( Str $filename ) returns Seq {
-    note "Reading $filename.txt…";
-    "$UNIDATA-folder/$filename.txt".IO.slurp.lines orelse die;
-}
-sub skip-line ( Str $line ) {
-    if $line.starts-with('#') or $line eq '' {
-        return True;
-    }
-    elsif $line.starts-with(' ') {
-        return True if $line.match(/^\s*$/);
-    }
-    False;
 }
 sub NameAlias ( Str $property, Str $file ) {
     for slurp-lines $file {

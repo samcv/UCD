@@ -3,9 +3,9 @@ use MONKEY-TYPING;
 use Data::Dump;
 use nqp;
 my $prefix = 'const static ';
-sub get-prefix is export {
-    $prefix;
-}
+my Str $UNIDATA-folder = "UNIDATA";
+my Str $snippet-folder = 'snippets';
+INIT print '.';
 augment class Str {
     multi method split-trim ( Str $delimiter, Int $limit? ) {
         $limit ?? self.split($delimiter, $limit).».trim
@@ -24,6 +24,39 @@ augment class Str {
         $copy ~~ s:g/(.**70..79 $breakpoint)/$0\n/;
         return $copy;
     }
+}
+#| Slurps files from the snippets folder and concatenates them together
+#| The first argument is the folder name inside /snippets that they are in
+#| The second argument make it only concat files which contain that string
+#| The third argument allows you to request only snippets starting with those
+#| numbers if the numbers are positive. If they are negative, it returns
+#| all snippets except those numbers.
+#| Takes a single number, or a List of numbers
+sub slurp-snippets ( Str $name, Str $subname?, $numbers? ) is export {
+    state @slurp-dir;
+    if !@slurp-dir {
+        my $slurp-folder = "$snippet-folder/$name".IO;
+        die unless $slurp-folder.d;
+        @slurp-dir = $slurp-folder.dir;
+    }
+    my @files = $subname ?? @slurp-dir.grep( { .basename.contains: $subname } ) !! @slurp-dir;
+    @files .= grep: { .basename.starts-with: $numbers.any } if $numbers and $numbers.any >= 0;
+    @files .= grep: { .basename.starts-with($numbers.any).not } if $numbers and $numbers.any < 0;
+    my $text ~= .slurp orelse die for @files.sort;
+    $text;
+}
+sub slurp-lines ( Str $filename ) returns Seq is export {
+    note "Reading $filename.txt…";
+    "$UNIDATA-folder/$filename.txt".IO.slurp.lines orelse die;
+}
+sub skip-line ( Str $line ) is export {
+    if $line.starts-with('#') or $line eq '' {
+        return True;
+    }
+    elsif $line.starts-with(' ') {
+        return True if $line.match(/^\s*$/);
+    }
+    False;
 }
 sub break-into-lines ( Str $breakpoint, Str $string ) is export {
     $string.break-into-lines($breakpoint);
@@ -48,6 +81,9 @@ multi sub compute-type ( Str $str ) {
     else {
         die "Don't know what type '$str' is";
     }
+}
+sub get-prefix is export {
+    $prefix;
 }
 multi sub compute-type ( Int $max, Int $min = 0 ) is export {
     say "max: $max, min: $min";
