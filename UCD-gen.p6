@@ -179,7 +179,7 @@ sub Generate_Name_List {
                 $base40-joined.break-into-lines(','),
                 "\};\n",
                 "#define LONGEST_NAME $longest-name\n",
-                "$snippets-folder/tail_names.c".IO.slurp,
+                slurp-snippets("names", "tail"),
                 );
     say "Took " ~ now - $t3 ~ " seconds to the final part of name creation";
     say "NAME GEN: took " ~ now - $t0_nl ~ " seconds to go through all the name generation code";
