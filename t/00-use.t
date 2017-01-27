@@ -5,7 +5,6 @@ use lib 'lib';
 my @modules = 'lib'.IO.dir.».basename.grep({.starts-with('.').not}).».subst(/ '.' .* $/, '');
 plan @modules.elems;
 for @modules {
-    .say;
     use-ok $_, "Can ‘use’ $_";
 }
 
