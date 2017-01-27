@@ -1,3 +1,7 @@
 *.html
 .precomp
 UNIDATA
+build
+source
+playground
+old
