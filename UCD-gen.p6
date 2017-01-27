@@ -178,8 +178,6 @@ sub Generate_Name_List {
     my $names_h = ("#define uninames_elems $base40-string.elems()",
                    "#define LONGEST_NAME $longest-name",
                    "#define HIGHEST_NAME_CP $max",
-                   "#define True 1",
-                   "#define False 0",
                    "$set-rang-func-h;",
                    compose-array($c-type, 'uninames', $base40-string.elems, $base40-joined, :header),
                    ).join("\n");

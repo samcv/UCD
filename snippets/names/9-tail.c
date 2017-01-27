@@ -27,12 +27,12 @@ void digest_one_chunk(Decompressor *ds) {
     /*fprintf(stderr, "digest one chunk, %d -> %d %d %d\n", num, ds->queue[ds->queue_len - 3], ds->queue[ds->queue_len - 2], ds->queue[ds->queue_len - 1]);*/
 }
 
-void eat_a_string( Decompressor *ds, uint8_t zero ) {
+void eat_a_string( Decompressor *ds, uint32_t skip_no_cp ) {
     ds->eos_signalled = 0;
     /* We're looking for a zero to start with, we are probably trying to
     * look up a specific codepoint's name */
-   if (zero == True) {
-       fprintf(stderr, "ds->queue %i\n", ds->queue);
+   if (skip_no_cp) {
+       fprintf(stderr, "Have been asked to skip %lu cp's\n", skip_no_cp);
    }
     while (!ds->eos_signalled) {
         /*fprintf(stderr, "start of loop: %d codemes in queue\n", ds->queue_len);*/
@@ -64,8 +64,7 @@ void eat_a_string( Decompressor *ds, uint8_t zero ) {
 }
 uint32_t get_cp_name (uint32_t cp) {
     Decompressor ds = {};
-    int ret;
-    cp = (uint32_t) 0x20;
+    uint32_t ret;
     ret = get_uninames(ds.out_buf, cp);
     if (ret == 0) {
         printf("cp: %i name: %s\n", cp, ds.out_buf);
@@ -73,9 +72,10 @@ uint32_t get_cp_name (uint32_t cp) {
     else {
         printf("ret: %i\n", ret);
         int index =  name_index[(cp - ret) / 2];
-        printf("name_index %i\n", index);
+        printf("name_index[%i]=%i, cp %lu, ret %lu, cp - ret = %lu\n", (cp - ret)/2, index, cp, ret, cp - ret);
         ds.input_position = (const unsigned short *) &uninames +  index;
-        eat_a_string(&ds, True);
+        printf("(cp - ret) % 2 = %i\n", (cp - ret) % 2);
+        eat_a_string(&ds, ( (cp - ret) % 2) );
         printf("cp: %i name: %s\n", cp, ds.out_buf);
     }
 }
@@ -85,14 +85,14 @@ int main (void) {
     ds.input_position = (const uint16_t *) &uninames;
     int i;
     int ret;
-    get_cp_name('A');
+    get_cp_name(0x20); /* U+20 SPACE */
     return 0;
     for (i = 0; i <= HIGHEST_NAME_CP; i++) {
         ret = get_uninames(ds.out_buf, cp);
         if (ret == 0) {
         }
         else {
-            eat_a_string(&ds, False);
+            eat_a_string(&ds, 0);
         }
         printf("U+%X '%s'\n", cp, ds.out_buf);
 

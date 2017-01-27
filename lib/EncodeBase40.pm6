@@ -16,6 +16,7 @@ class base40-string {
     has Str $.encoded-str;
     has %!shift-one;
     has %!base;
+    has $!num_encoded_codepoints = 0;
     my Array $indices;
     my $base40-nums := nqp::list_s;
     method TWEAK {
@@ -34,8 +35,11 @@ class base40-string {
     multi method push {
         $!to-encode-str ~= "\0";
     }
-    multi method push ( Str $string ) {
+    multi method push ( Str:D $string ) {
         $!to-encode-str ~= $string ~ "\0";
+        if $string ne '' {
+            $!num_encoded_codepoints++;
+        }
     }
     method done {
         # XXX for some reason either we aren't encoding the chars right or
@@ -49,6 +53,7 @@ class base40-string {
                 $base40-nums := self.encode-base40-string($!to-encode-str);
             }
             else {
+                warn "This has not been tested!";
                 my $var := self.encode-base40-string($!to-encode-str);
                 for ^nqp::elems($var) {
                     nqp::push_s($base40-nums, nqp::atpos_s($var, $_));
@@ -145,9 +150,10 @@ class base40-string {
             $str ~= compose-array(compute-type("char *"), "s_table",
                     @s_table.elems, @s_table.join(',') );
         }
-        my $name_index = compose-array(
-            compute-type($indices.elems), "name_index",
-            $indices.elems, $indices.join(',') );
+        my $name_index = "#define num_encoded_codepoints = $!num_encoded_codepoints\n" ~
+                            compose-array(
+                                compute-type($indices.elems), "name_index",
+                                $indices.elems, $indices.join(',') );
 
         return $str ~ "\n" ~ $name_index ~ "\n";
     }
