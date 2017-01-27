@@ -1,3 +1,22 @@
+typedef struct Decompressor {
+    /* Encoding an entry gives us three "commands" that can be a character or
+     * something in a further shift level. Hold them in here for future
+     * consumption. */
+    int16_t queue[6];
+    /* How many valid entries are currently in the queue? */
+    uint16_t queue_len;
+
+    const uint16_t * input_position;
+
+    /* Were we signalled to end reading this string and continue with the next one? */
+    uint8_t eos_signalled;
+
+    uint8_t out_buf_pos;
+
+    /* We put our characters here. */
+    char out_buf[LONGEST_NAME + 1];
+} Decompressor;
+
 void digest_one_chunk(Decompressor *ds) {
     uint16_t num = *(ds->input_position++);
     uint32_t temp;
@@ -8,8 +27,13 @@ void digest_one_chunk(Decompressor *ds) {
     /*fprintf(stderr, "digest one chunk, %d -> %d %d %d\n", num, ds->queue[ds->queue_len - 3], ds->queue[ds->queue_len - 2], ds->queue[ds->queue_len - 1]);*/
 }
 
-void eat_a_string( Decompressor *ds ) {
+void eat_a_string( Decompressor *ds, uint8_t zero ) {
     ds->eos_signalled = 0;
+    /* We're looking for a zero to start with, we are probably trying to
+    * look up a specific codepoint's name */
+   if (zero == True) {
+       fprintf(stderr, "ds->queue %i\n", ds->queue);
+   }
     while (!ds->eos_signalled) {
         /*fprintf(stderr, "start of loop: %d codemes in queue\n", ds->queue_len);*/
         if (ds->queue_len == 0) { digest_one_chunk(ds); }
@@ -38,19 +62,34 @@ void eat_a_string( Decompressor *ds ) {
         /*fprintf(stderr, "out_buf_pos now %d\n", ds->out_buf_pos);*/
     }
 }
-
-int main (void) {
-    int32_t cp = 0;
+uint32_t get_cp_name (uint32_t cp) {
     Decompressor ds = {};
-    ds.input_position = (const unsigned short *) &uninames;
+    int ret;
+    cp = (uint32_t) 'A';
+    ret = get_uninames(ds.out_buf, cp);
+    if (ret == 0) {
+        printf("cp: %i name: %s\n", cp, ds.out_buf);
+    }
+    else {
+        ds.input_position = (const unsigned short *) &uninames + cp + ret * 2;
+        eat_a_string(&ds, True);
+        printf("cp: %i name: %s\n", cp, ds.out_buf);
+    }
+}
+int main (void) {
+    uint32_t cp = 0;
+    Decompressor ds = {};
+    ds.input_position = (const uint16_t *) &uninames;
     int i;
     int ret;
+    get_cp_name('A');
+    return 0;
     for (i = 0; i <= HIGHEST_NAME_CP; i++) {
         ret = get_uninames(ds.out_buf, cp);
         if (ret == 0) {
         }
         else {
-            eat_a_string(&ds);
+            eat_a_string(&ds, False);
         }
         printf("U+%X '%s'\n", cp, ds.out_buf);
 

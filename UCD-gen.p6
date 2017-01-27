@@ -4,10 +4,11 @@ use nqp;
 use Data::Dump;
 use lib 'lib';
 use UCDlib;
+use ArrayCompose;
 use Set-Range;
 use seenwords;
 use EncodeBase40;
-BEGIN print ".";
+use Operators;
 INIT  say "\nStarting…";
 my Str $build-folder = "source";
 my Str $snippets-folder = "snippets";
@@ -36,6 +37,7 @@ sub start-routine {
         mkdir $build-folder;
     }
 }
+
 sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$debug = False, Bool :$names-only = False, Bool :$numeric-value-only = False ) {
     $debug-global = $debug;
     start-routine();
@@ -173,9 +175,11 @@ sub Generate_Name_List {
     my $names_h = ("#define uninames_elems $base40-string.elems()",
                    "#define LONGEST_NAME $longest-name",
                    "#define HIGHEST_NAME_CP $max",
+                   "#define True 1",
+                   "#define False 0",
                    "$set-rang-func-h;",
                    compose-array($c-type, 'uninames', $base40-string.elems, $base40-joined, :header),
-                   slurp-snippets('names.h')).join("\n");
+                   ).join("\n");
     my $string = join( '',
                 slurp-snippets('names', 'head'),
                 $set-range-func,
@@ -186,20 +190,7 @@ sub Generate_Name_List {
     say "Took " ~ now - $t3 ~ " seconds to the final part of name creation";
     say "NAME GEN: took " ~ now - $t0_nl ~ " seconds to go through all the name generation code";
     write-file('names.h', $names_h);
-    say 'backkkk' ~ $base40-string.convert-back.perl;
     return $string;
-}
-sub compose-array ($array-type, $array-name, $array-elems, $array-body, Bool :$header) {
-    if $header {
-        $array-type ~ " $array-name\[" ~ $array-elems ~ '];';
-    }
-    else {
-        ($array-type,
-        " $array-name\[" ~ $array-elems ~ '] = {' ~ "\n",
-        $array-body.break-into-lines(','),
-        '};',
-        "\n").join;
-    }
 }
 sub DerivedNumericValues ( Str $filename ) {
     my %numerator-seen;

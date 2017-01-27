@@ -5,7 +5,6 @@ use nqp;
 my $prefix = 'const static ';
 my Str $UNIDATA-folder = "UNIDATA";
 my Str $snippet-folder = 'snippets';
-INIT print '.';
 augment class Str {
     multi method split-trim ( Str $delimiter, Int $limit? ) {
         $limit ?? self.split($delimiter, $limit).».trim
@@ -61,9 +60,6 @@ sub skip-line ( Str $line ) is export {
     }
     False;
 }
-sub break-into-lines ( Str $breakpoint, Str $string ) is export {
-    $string.break-into-lines($breakpoint);
-}
 sub Dump-Range ( Range $range, Hash $hashy ) is export {
     for $range.lazy -> $point {
         say $point;
@@ -77,6 +73,10 @@ sub reverse-hash-int-only ( Hash $hash ) is export {
     }
     return %new-hash;
 }
+sub get-prefix is export {
+    $prefix;
+}
+proto sub compute-type (|) { * }
 multi sub compute-type ( Str $str ) {
     if $str eq 'char *' {
         return $prefix ~ 'char *';
@@ -84,9 +84,6 @@ multi sub compute-type ( Str $str ) {
     else {
         die "Don't know what type '$str' is";
     }
-}
-sub get-prefix is export {
-    $prefix;
 }
 multi sub compute-type ( Int $max, Int $min = 0 ) is export {
     say "max: $max, min: $min";
@@ -129,11 +126,3 @@ multi sub compute-type ( Int $max, Int $min = 0 ) is export {
     }
     $prefix ~ $type;
 }
-sub circumfix:<⟅ ⟆>(*@array) returns str is export {
-    @array.join('');
-}
-multi sub prefix:< ¿ > ( Str $str ) is export { $str.defined and $str ne '' ?? True !! False }
-multi sub prefix:< ¿ > ( Bool $bool ) { $bool.defined and $bool != False }
-
-sub infix:< =? > ($left is rw, $right) is export { $left = $right if ¿$right }
-sub infix:< ?= > ($left is rw, $right) is export { $left = $right if ¿$left }

@@ -3,7 +3,8 @@
 # This can save space.
 use v6;
 use nqp;
-INIT print '.';
+use ArrayCompose;
+use UCDlib;
 # If we end up needing more characters we can always use one of the null values to denote "SHIFT"
 # and encode a second level of characters as well
 class base40-string {
@@ -15,6 +16,7 @@ class base40-string {
     has Str $.encoded-str;
     has %!shift-one;
     has %!base;
+    my Array $indices;
     my $base40-nums := nqp::list_s;
     method TWEAK {
         for ^@!bases.elems {
@@ -68,6 +70,8 @@ class base40-string {
             }
 
         }
+        # Keeps track of the index for the unicode names
+        my Int $counter = 0;
         my int $items_f = $string.chars;
         my int $items_i = 0;
         my $coded-nums := nqp::list_s;
@@ -78,6 +82,12 @@ class base40-string {
         }
         while $items_i < $items_f {
             my str $item = nqp::substr($string, $items_i++, 1);
+            if $item eq "\0" {
+                if $counter % 2 == 0 {
+                    $indices.push(nqp::elems($coded-nums));
+                }
+                $counter++;
+            }
             # This is a shifted value, so process it as such
             if $item eq '{' {
                 my str $item = nqp::substr($string, $items_i++, 1);;
@@ -106,7 +116,6 @@ class base40-string {
                 }
                 next;
             }
-
             die '%!base: ' ~ %!base.perl ~ "Can't find this letter in table “$item”" unless %!base{$item}:exists;
             $triplet += %!base{$item} * $i;
             $i = $i div 40;
@@ -134,9 +143,16 @@ class base40-string {
             for @!shift-level-one {
                 @s_table.push(qq["$_"]);
             }
-            $str ~= "char * s_table[@s_table.elems()] = \{\n" ~ @s_table.join(',') ~ "\n\};\n";
+            $str ~= [~] compute-type("char *"),
+                        " s_table[@s_table.elems()] = \{\n",
+                        @s_table.join(','),
+                        "\n\};\n";
         }
-        return $str;
+        my $name_index = compose-array(
+            compute-type($indices.elems), "name_index",
+            $indices.elems, $indices.join(',') );
+
+        return $str ~ "\n" ~ $name_index ~ "\n";
     }
     method elems {
         self.get-base40;
