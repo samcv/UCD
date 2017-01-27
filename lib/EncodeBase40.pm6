@@ -4,9 +4,9 @@
 use v6;
 use nqp;
 INIT print '.';
-our @bases = "\0",'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O',
-    'P','Q','R','S','T','U','V','W','X','Y','Z','0','1','2','3','4','5','6',
-    '7','8','9',' ','-', '\a';
+# If we end up needing more characters we can always use one of the null values to denote "SHIFT"
+# and encode a second level of characters as well
+our @bases;
 our @shift-level-one;
 our @shift-level-two;
 our $pushed-strings;
@@ -21,8 +21,12 @@ class base40-string {
     has Str $.to-encode-str;
     has Str $.encoded-str;
     has %!shift-one;
+    has %!base;
     my $base40-nums := nqp::list_s;
     method init-globals {
+        for ^@!bases.elems {
+           %base{@!bases[$_]} = $_;
+        }
         %shift-one = %!shift-one;
         @bases = @.bases;
         @shift-level-one = @.shift-level-one;
@@ -59,7 +63,24 @@ class base40-string {
     }
     method get-c-table {
         self.init-globals;
-        get-base40-c-table(@!shift-level-one, @!bases);
+        my $str = "char ctable[@!bases.elems()] = \{\n";
+        my @c_table;
+        my @s_table;
+        for @!bases {
+            my $string = "'$_'";
+            $string = q['\0'] if $string eq "'\0'";
+            $string = q['\a'] if $string eq "'\a'";
+            @c_table.push($string);
+        }
+        $str ~= @c_table.join(',') ~ "\n\};\n";
+        if @!shift-level-one {
+            say "detected shift level one in making c table";
+            for @!shift-level-one {
+                @s_table.push(qq["$_"]);
+            }
+            $str ~= "char * s_table[@s_table.elems()] = \{\n" ~ @s_table.join(',') ~ "\n\};\n";
+        }
+        return $str;
     }
     method elems {
         self.get-base40;
@@ -78,13 +99,6 @@ class base40-string {
     }
 }
 
-# I
-# If we end up needing more characters we can always use one of the null values to denote "SHIFT"
-# and encode a second level of characters as well
-
-for ^@bases.elems {
-    %base{@bases[$_]} = $_;
-}
 sub init-shift-hashes (@sub-shift-level-one?) is export {
     if @sub-shift-level-one {
         %shift-one := {};
@@ -103,57 +117,16 @@ sub init-shift-hashes (@sub-shift-level-one?) is export {
         note "No \@shift-level-one found";
     }
 }
-sub set-shift-levels ( %shift-level-one ) is export {
-    for %shift-level-one.sort(+(*.value)) -> $pair {
-        push @shift-level-one, $pair.key;
-    }
-}
-sub get-base40-table is export {
-    @bases;
-}
-sub get-base40-shift-one-table is export {
-    @shift-level-one;
-}
-sub get-base40-hash is export {
-    %base;
-}
-sub get-base40-c-table (@shift-level-one?,
-    @bases = (
-    "\0",'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O',
-    'P','Q','R','S','T','U','V','W','X','Y','Z','0','1','2','3','4','5','6',
-    '7','8','9',' ','-', '\a')
-    ) is export {
-    my $str = "char ctable[@bases.elems()] = \{\n";
-    my @c_table;
-    my @s_table;
-    for @bases {
-        my $string = "'$_'";
-        $string = q['\0'] if $string eq "'\0'";
-        $string = q['\a'] if $string eq "'\a'";
-        @c_table.push($string);
-    }
-    $str ~= @c_table.join(',') ~ "\n\};\n";
-    if @shift-level-one {
-        say "detected shift level one in making c table";
-        for @shift-level-one {
-            @s_table.push(qq["$_"]);
-        }
-        $str ~= "char * s_table[@s_table.elems()] = \{\n" ~ @s_table.join(',') ~ "\n\};\n";
-    }
-    return $str;
-}
 sub test-points {
     my $new;
     my $old;
     for 0..0x1FFFFF -> $cp {
         my $name = $cp.uniname.lc;
-        #say $name;
         next if $name.contains('<') or $name eq '';
         $new += encode-base40-string($name).elems;
         $old += $name.chars;
     }
     say "new $new old $old. diff: {$old - $new}";
-
 }
 sub encode-base40-string ( Str $string is copy, base40-string $self? ) is export {
     if $self {
@@ -171,7 +144,6 @@ sub encode-base40-string ( Str $string is copy, base40-string $self? ) is export
         }
 
     }
-    #note "string: $string";
     my int $items_f = $string.chars;
     my int $items_i = 0;
     my $coded-nums := nqp::list_s;
@@ -191,11 +163,8 @@ sub encode-base40-string ( Str $string is copy, base40-string $self? ) is export
                 $str ~= $item;
                 $item = nqp::substr($string, $items_i++, 1);
             }
-            #say "STR: $str";
             for %base{@bases[@bases.end]}, $str.Int -> $num {
                 $triplet += $num * $i;
-
-                #say "triplet: $triplet i: $i";
                 # We have our shift value now, so add it to the @coded-nums
                 # Push the shift character
                 $i = $i div 40;
