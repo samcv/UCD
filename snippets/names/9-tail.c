@@ -1,22 +1,3 @@
-typedef struct Decompressor {
-    /* Encoding an entry gives us three "commands" that can be a character or
-     * something in a further shift level. Hold them in here for future
-     * consumption. */
-    int16_t queue[6];
-    /* How many valid entries are currently in the queue? */
-    uint16_t queue_len;
-
-    const unsigned short * input_position;
-
-    /* Were we signalled to end reading this string and continue with the next one? */
-    uint8_t eos_signalled;
-
-    uint8_t out_buf_pos;
-
-    /* We put our characters here. */
-    char out_buf[LONGEST_NAME + 1];
-} Decompressor;
-
 void digest_one_chunk(Decompressor *ds) {
     uint16_t num = *(ds->input_position++);
     uint32_t temp;
@@ -62,7 +43,8 @@ int main (void) {
     int32_t cp = 0;
     Decompressor ds = {};
     ds.input_position = (const unsigned short *) &uninames;
-    while (ds.input_position < uninames + uninames_elems + 50) {
+    int i;;
+    for (i = 0; i <= HIGHEST_NAME_CP; i++) {
         eat_a_string(&ds);
         if (ds.out_buf[0] == '\0') {
             get_uninames(ds.out_buf, cp);

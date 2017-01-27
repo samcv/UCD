@@ -24,6 +24,11 @@ my %point-index = nqp::hash;
 my $debug-global = False;
 my int $bin-index = -1;
 my $indent = "\c[SPACE]" x 4;
+sub write-file ( Str $filename, Str $text ) {
+    my $file = "$build-folder/$filename";
+    note "Writing $file…";
+    $file.IO.spurt($text);
+}
 sub start-routine {
     if !$build-folder.IO.d {
         say "Creating $build-folder because it does not already exist.";
@@ -169,22 +174,34 @@ sub Generate_Name_List {
     \}
     END
     say "Took " ~ now - $t3 ~ " seconds to generate set range's";
+    my $names_h = ("#define uninames_elems $base40-string.elems()",
+                   "#define LONGEST_NAME $longest-name",
+                   "#define HIGHEST_NAME_CP $max",
+                   compose-array($c-type, 'uninames', $base40-string.elems, $base40-joined, :header),
+                   slurp-snippets('names.h')).join("\n");
     my $string = join( '',
-                "#include <stdio.h>\n",
-                "#include <stdint.h>\n",
-                "#include <string.h>\n",
-                "#define uninames_elems $base40-string.elems()\n",
+                slurp-snippets('names', 'head'),
                 $set-range-func,
                 $base40-string.get-c-table,
-                $c-type ~ ' uninames[' ~ $base40-string.elems ~ '] = {' ~ "\n",
-                $base40-joined.break-into-lines(','),
-                "\};\n",
-                "#define LONGEST_NAME $longest-name\n",
+                compose-array($c-type, 'uninames', $base40-string.elems, $base40-joined),
                 slurp-snippets("names", "tail"),
                 );
     say "Took " ~ now - $t3 ~ " seconds to the final part of name creation";
     say "NAME GEN: took " ~ now - $t0_nl ~ " seconds to go through all the name generation code";
+    write-file('names.h', $names_h);
     return $string;
+}
+sub compose-array ($array-type, $array-name, $array-elems, $array-body, Bool :$header) {
+    if $header {
+        $array-type ~ " $array-name\[" ~ $array-elems ~ '];';
+    }
+    else {
+        ($array-type,
+        " $array-name\[" ~ $array-elems ~ '] = {' ~ "\n",
+        $array-body.break-into-lines(','),
+        '};',
+        "\n").join;
+    }
 }
 sub DerivedNumericValues ( Str $filename ) {
     my %numerator-seen;
