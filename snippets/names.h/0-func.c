@@ -18,4 +18,3 @@ typedef struct Decompressor {
 } Decompressor;
 void digest_one_chunk(Decompressor *ds);
 void eat_a_string( Decompressor *ds );
-char * get_uninames ( char * out, uint32_t cp );

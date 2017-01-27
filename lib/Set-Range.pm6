@@ -57,7 +57,7 @@ class Set-Range {
                 $code;
             \}
             if ($varname > {self.get-range{$elem}<last>})
-                return {self.get-range{$elem}<last>}
+                return {self.get-range{$elem}<last>};
             END
         }
         $string;

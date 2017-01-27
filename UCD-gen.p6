@@ -161,8 +161,9 @@ sub Generate_Name_List {
     my $t2 = now;
     my $base40-joined = $base40-string.join(',');
     my $t3 = now;
+    my $set-rang-func-h = 'uint32_t get_uninames ( char * out, uint32_t cp )';
     my $set-range-func = qq:to/END/;
-    char * get_uninames ( char * out, uint32_t cp ) \{
+    $set-rang-func-h \{
             {$set-range.generate-c("cp")}
 
         return 0;
@@ -172,6 +173,7 @@ sub Generate_Name_List {
     my $names_h = ("#define uninames_elems $base40-string.elems()",
                    "#define LONGEST_NAME $longest-name",
                    "#define HIGHEST_NAME_CP $max",
+                   "$set-rang-func-h;",
                    compose-array($c-type, 'uninames', $base40-string.elems, $base40-joined, :header),
                    slurp-snippets('names.h')).join("\n");
     my $string = join( '',
