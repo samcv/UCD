@@ -27,7 +27,7 @@ my $debug-global = False;
 my int $bin-index = -1;
 my $indent = "\c[SPACE]" x 4;
 sub write-file ( Str $filename is copy, Str $text ) {
-    $filename ~~ s/ ^ \w //;
+    $filename ~~ s/ ^ \W //;
     my $file = "$build-folder/$filename";
     if $text {
         note "Writing $file…";
