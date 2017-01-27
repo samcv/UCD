@@ -128,7 +128,6 @@ class base40-string {
         $coded-nums;
     }
     method get-c-table {
-        my $str = "char ctable[@!bases.elems()] = \{\n";
         my @c_table;
         my @s_table;
         for @!bases {
@@ -137,16 +136,14 @@ class base40-string {
             $string = q['\a'] if $string eq "'\a'";
             @c_table.push($string);
         }
-        $str ~= @c_table.join(',') ~ "\n\};\n";
+        my $str ~= compose-array( "char", "ctable", @!bases.elems, @c_table.join(',') );
         if @!shift-level-one {
             say "detected shift level one in making c table";
             for @!shift-level-one {
                 @s_table.push(qq["$_"]);
             }
-            $str ~= [~] compute-type("char *"),
-                        " s_table[@s_table.elems()] = \{\n",
-                        @s_table.join(','),
-                        "\n\};\n";
+            $str ~= compose-array(compute-type("char *"), "s_table",
+                    @s_table.elems, @s_table.join(',') );
         }
         my $name_index = compose-array(
             compute-type($indices.elems), "name_index",

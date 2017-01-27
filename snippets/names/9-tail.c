@@ -65,13 +65,16 @@ void eat_a_string( Decompressor *ds, uint8_t zero ) {
 uint32_t get_cp_name (uint32_t cp) {
     Decompressor ds = {};
     int ret;
-    cp = (uint32_t) 'A';
+    cp = (uint32_t) 0x20;
     ret = get_uninames(ds.out_buf, cp);
     if (ret == 0) {
         printf("cp: %i name: %s\n", cp, ds.out_buf);
     }
     else {
-        ds.input_position = (const unsigned short *) &uninames + cp + ret * 2;
+        printf("ret: %i\n", ret);
+        int index =  name_index[(cp - ret) / 2];
+        printf("name_index %i\n", index);
+        ds.input_position = (const unsigned short *) &uninames +  index;
         eat_a_string(&ds, True);
         printf("cp: %i name: %s\n", cp, ds.out_buf);
     }

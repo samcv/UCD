@@ -26,10 +26,13 @@ my %point-index = nqp::hash;
 my $debug-global = False;
 my int $bin-index = -1;
 my $indent = "\c[SPACE]" x 4;
-sub write-file ( Str $filename, Str $text ) {
+sub write-file ( Str $filename is copy, Str $text ) {
+    $filename ~~ s/ ^ \w //;
     my $file = "$build-folder/$filename";
-    note "Writing $file…";
-    $file.IO.spurt($text);
+    if $text {
+        note "Writing $file…";
+        $file.IO.spurt($text);
+    }
 }
 sub start-routine {
     if !$build-folder.IO.d {
@@ -84,11 +87,11 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$de
                 make-enums(), make-bitfield-rows(), make-point-index(),
                 $int-main;
             note "Saving bitfield.c…";
-            "$build-folder/bitfield.c".IO.spurt($bitfield_c);
-            "$build-folder/bitfield.h".IO.spurt(@bitfield-h.join("\n"));
+            write-file('bitfield.c', $bitfield_c);
+            write-file('bitfield.h', @bitfield-h.join("\n"));
         }
         note "Saving names.c…";
-        "$build-folder/names.c".IO.spurt($name-file) if $name-file;
+        write-file('names.c', $name-file);
     }
     say "Took {now - INIT now} seconds.";
 }
@@ -182,6 +185,7 @@ sub Generate_Name_List {
                    ).join("\n");
     my $string = join( '',
                 slurp-snippets('names', 'head'),
+                $names_h,
                 $set-range-func,
                 $base40-string.get-c-table,
                 compose-array($c-type, 'uninames', $base40-string.elems, $base40-joined),
@@ -189,7 +193,6 @@ sub Generate_Name_List {
                 );
     say "Took " ~ now - $t3 ~ " seconds to the final part of name creation";
     say "NAME GEN: took " ~ now - $t0_nl ~ " seconds to go through all the name generation code";
-    write-file('names.h', $names_h);
     return $string;
 }
 sub DerivedNumericValues ( Str $filename ) {
@@ -625,9 +628,9 @@ sub make-bitfield-rows {
 sub dump-json ( Bool $dump ) {
     note "Converting data to JSON...";
     if $dump {
-        spurt $build-folder ~ %points.VAR.name ~ '.json', to-json(%points);
-        spurt $build-folder ~ %decomp_spec.VAR.name ~ '.json', to-json(%decomp_spec);
+        write-file(%points.VAR.name ~ '.json',  to-json(%points));
+        write-file(%decomp_spec.VAR.name ~ '.json',  to-json(%decomp_spec));
     }
-    spurt $build-folder ~ %enumerated-properties.VAR.name ~ '.json', to-json(%enumerated-properties);
-    spurt $build-folder ~ %binary-properties.VAR.name ~ '.json', to-json(%binary-properties);
+    write-file(%enumerated-properties.VAR.name ~ '.json',  to-json(%enumerated-properties));
+    write-file(%binary-properties.VAR.name ~ '.json',  to-json(%binary-properties));
 }
