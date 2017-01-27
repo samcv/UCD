@@ -8,7 +8,7 @@ use seenwords;
 use EncodeBase40;
 BEGIN print ".";
 INIT  say "\nStarting…";
-my Str $build-folder = "build";
+my Str $build-folder = "source";
 my Str $snippets-folder = "snippets";
 # stores lines of bitfield.h
 our @bitfield-h;
@@ -71,9 +71,10 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$de
         else {
             $int-main = slurp-snippets("bitfield", "int-main", -2);
         }
-        say ~ "SNIP" ~ slurp-snippets("bitfield", "int-main") ~ "SNIP";
         unless $names-only {
-            my $bitfield_c = (slurp-snippets("bitfield", "header"), make-enums(), make-bitfield-rows(), make-point-index(), $int-main).join;
+            my $bitfield_c = [~] slurp-snippets("bitfield", "header"),
+                make-enums(), make-bitfield-rows(), make-point-index(),
+                $int-main;
             note "Saving bitfield.c…";
             "$build-folder/bitfield.c".IO.spurt($bitfield_c);
             "$build-folder/bitfield.h".IO.spurt(@bitfield-h.join("\n"));

@@ -1,7 +1,7 @@
 #!/usr/bin/env perl6
 use v6;
 use Test;
-todo 4, "Needs rework";
+todo "Needs rework", 4;
 use nqp;
 use lib 'lib';
 use EncodeBase40;

@@ -33,16 +33,19 @@ augment class Str {
 #| all snippets except those numbers.
 #| Takes a single number, or a List of numbers
 sub slurp-snippets ( Str $name, Str $subname?, $numbers? ) is export {
-    state @slurp-dir;
-    if !@slurp-dir {
-        my $slurp-folder = "$snippet-folder/$name".IO;
-        die unless $slurp-folder.d;
-        @slurp-dir = $slurp-folder.dir;
+    my $dir-name = "$snippet-folder/$name";
+    state %dir-listing;
+    if !%dir-listing {
+        for $snippet-folder.IO.dir -> $folder {
+            die $folder unless $folder.d;
+            %dir-listing{$folder} = $folder.dir.List;
+        }
     }
-    my @files = $subname ?? @slurp-dir.grep( { .basename.contains: $subname } ) !! @slurp-dir;
-    @files .= grep: { .basename.starts-with: $numbers.any } if $numbers and $numbers.any >= 0;
-    @files .= grep: { .basename.starts-with($numbers.any).not } if $numbers and $numbers.any < 0;
-    my $text ~= .slurp orelse die for @files.sort;
+    die if !defined %dir-listing{$dir-name};
+    my $files = $subname ?? %dir-listing{$dir-name}.grep( { .basename.contains: $subname } ) !! %dir-listing{$dir-name};
+    $files .= grep: { .basename.starts-with: $numbers.any } if $numbers and $numbers.any >= 0;
+    $files .= grep: { .basename.starts-with($numbers.any).not } if $numbers and $numbers.any < 0;
+    my $text ~= .slurp orelse die for $files.sort;
     $text;
 }
 sub slurp-lines ( Str $filename ) returns Seq is export {

@@ -13,7 +13,6 @@ class seen-words is export {
     has $.levels-to-gen = 0;
     method saw-line ( Str:D $line ) {
         for $line.split([' ', '-']) {
-            #say "see line $_ XXXX";
             %!seen-words{$_}++;
             %seen-words-shift-one{$_} += (.chars * 2/3) - 2/3 * 2; # Calculate how much we save if we shorten it
             %seen-words-shift-two{$_} += (.chars * 2/3) - 2/3 * 3; # for first and second shifts
@@ -31,7 +30,6 @@ class seen-words is export {
                 last if $i >= 40;
             }
             note "Can save: " ~ $!saved-bytes / 1000 ~ " KB with first shift level";
-            %seen-words-shift-one;
         }
         return %shift-one;
     }
