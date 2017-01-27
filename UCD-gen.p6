@@ -155,6 +155,7 @@ sub Generate_Name_List {
             $base40-string.push;
         }
     }
+    $base40-string.done;
     say "Took " ~ now - $t1 ~ " secs to go through all codepoints";
     say "Joining codepoints";
     my $t2 = now;
@@ -183,6 +184,7 @@ sub Generate_Name_List {
     say "Took " ~ now - $t3 ~ " seconds to the final part of name creation";
     say "NAME GEN: took " ~ now - $t0_nl ~ " seconds to go through all the name generation code";
     write-file('names.h', $names_h);
+    say 'backkkk' ~ $base40-string.convert-back.perl;
     return $string;
 }
 sub compose-array ($array-type, $array-name, $array-elems, $array-body, Bool :$header) {

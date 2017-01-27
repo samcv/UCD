@@ -6,13 +6,6 @@ use nqp;
 INIT print '.';
 # If we end up needing more characters we can always use one of the null values to denote "SHIFT"
 # and encode a second level of characters as well
-our @bases;
-our @shift-level-one;
-our @shift-level-two;
-our $pushed-strings;
-our %base;
-our %shift-one;
-our %shift-two;
 class base40-string {
     has @.bases = "\0",'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O',
         'P','Q','R','S','T','U','V','W','X','Y','Z','0','1','2','3','4','5','6',
@@ -23,15 +16,10 @@ class base40-string {
     has %!shift-one;
     has %!base;
     my $base40-nums := nqp::list_s;
-    method init-globals {
-        for ^@!bases.elems {
-           %base{@!bases[$_]} = $_;
-        }
-        %shift-one = %!shift-one;
-        @bases = @.bases;
-        @shift-level-one = @.shift-level-one;
-    }
     method TWEAK {
+        for ^@!bases.elems {
+           %!base{@!bases[$_]} = $_;
+        }
         if @!shift-level-one {
             self.set-shift-level-one(@!shift-level-one);
         }
@@ -40,7 +28,6 @@ class base40-string {
         for ^@!shift-level-one.elems {
             %!shift-one{@!shift-level-one[$_]} = $_;
         }
-        self.init-globals;
     }
     multi method push {
         $!to-encode-str ~= "\0";
@@ -48,21 +35,90 @@ class base40-string {
     multi method push ( Str $string ) {
         $!to-encode-str ~= $string ~ "\0";
     }
+    method done {
+        # XXX for some reason either we aren't encoding the chars right or
+        # names.c will keep going unless you put an extra null
+        $!to-encode-str ~= "\0";
+    }
     method get-base40 {
         note "Running get-base40";
-        self.init-globals;
         if $!to-encode-str.defined and $!to-encode-str ne '' {
-            init-shift-hashes(@!shift-level-one) if @!shift-level-one;
-            die if nqp::elems($base40-nums) > 0;
-            $base40-nums := encode-base40-string($!to-encode-str);
+            if nqp::elems($base40-nums) == 0 {
+                $base40-nums := self.encode-base40-string($!to-encode-str);
+            }
+            else {
+                my $var := self.encode-base40-string($!to-encode-str);
+                for ^nqp::elems($var) {
+                    nqp::push_s($base40-nums, nqp::atpos_s($var, $_));
+                }
+            }
             $!encoded-str ~= $!to-encode-str;
             $!to-encode-str = '';
         }
         note "Done running get-base40";
         $base40-nums;
     }
+    method encode-base40-string ( Str $string is copy ) {
+        if @!shift-level-one {
+            for @!shift-level-one -> $s_string {
+                if $string.contains($s_string) {
+                    my $replacement = '{' ~ %!shift-one{$s_string} ~ '}';
+                    $string ~~ s:g/$s_string/$replacement/;
+                }
+            }
+
+        }
+        my int $items_f = $string.chars;
+        my int $items_i = 0;
+        my $coded-nums := nqp::list_s;
+        my int $i = 40 ** 2;
+        my int $triplet = 0;
+        sub items-elems {
+            $items_i - $items_f - 1;
+        }
+        while $items_i < $items_f {
+            my str $item = nqp::substr($string, $items_i++, 1);
+            # This is a shifted value, so process it as such
+            if $item eq '{' {
+                my str $item = nqp::substr($string, $items_i++, 1);;
+                my str $str;
+                # Grab the numbers up until the '}'
+                while $item ne '}' {
+                    $str ~= $item;
+                    $item = nqp::substr($string, $items_i++, 1);
+                }
+                for %!base{@!bases[@!bases.end]}, $str.Int -> $num {
+                    $triplet += $num * $i;
+                    # We have our shift value now, so add it to the @coded-nums
+                    # Push the shift character
+                    $i = $i div 40;
+                    # XXX Maybe we need to not check if elems == 0 since we may have pulled everything out?
+                    if $i < 1 {
+                        $i = 40 ** 2;
+
+                        nqp::push_s($coded-nums, nqp::base_I(nqp::decont($triplet), 10));
+                        $triplet = 0;
+                    }
+                }
+                if items-elems() == 0 {
+                    nqp::push_s($coded-nums, nqp::base_I(nqp::decont($triplet), 10));
+                    $triplet = 0;
+                }
+                next;
+            }
+
+            die '%!base: ' ~ %!base.perl ~ "Can't find this letter in table “$item”" unless %!base{$item}:exists;
+            $triplet += %!base{$item} * $i;
+            $i = $i div 40;
+            if $i < 1 or items-elems() == 0 {
+                $i = 40 ** 2;
+                nqp::push_s($coded-nums, nqp::base_I(nqp::decont($triplet), 10));
+                $triplet = 0;
+            }
+        }
+        $coded-nums;
+    }
     method get-c-table {
-        self.init-globals;
         my $str = "char ctable[@!bases.elems()] = \{\n";
         my @c_table;
         my @s_table;
@@ -90,7 +146,14 @@ class base40-string {
         self.get-base40;
         nqp::box_s($!encoded-str, Str);
     }
-    method join (Str $joiner) {
+    method convert-back {
+        my @array;
+        for ^nqp::elems($base40-nums) {
+            @array.push(nqp::atpos_s($base40-nums, $_));
+        }
+        decode-base40-nums(@!bases, @array, :shift-one(@!shift-level-one));
+    }
+    method join (Str $joiner = '') {
         self.get-base40;
         note "Starting join process";
         my str $joined_str = nqp::join($joiner, $base40-nums);
@@ -99,107 +162,12 @@ class base40-string {
     }
 }
 
-sub init-shift-hashes (@sub-shift-level-one?) is export {
-    if @sub-shift-level-one {
-        %shift-one := {};
-        for ^@sub-shift-level-one.elems {
-            %shift-one{@sub-shift-level-one[$_]} = $_;
-        }
-        @shift-level-one = @sub-shift-level-one;
-    }
-    elsif @shift-level-one {
-        %shift-one := {};
-        for ^@shift-level-one.elems {
-            %shift-one{@shift-level-one[$_]} = $_;
-        }
-    }
-    else {
-        note "No \@shift-level-one found";
-    }
-}
-sub test-points {
-    my $new;
-    my $old;
-    for 0..0x1FFFFF -> $cp {
-        my $name = $cp.uniname.lc;
-        next if $name.contains('<') or $name eq '';
-        $new += encode-base40-string($name).elems;
-        $old += $name.chars;
-    }
-    say "new $new old $old. diff: {$old - $new}";
-}
-sub encode-base40-string ( Str $string is copy, base40-string $self? ) is export {
-    if $self {
-        init-shift-hashes($self.shift-level-one);
-    }
-    if @shift-level-one {
-        if !%shift-one {
-            init-shift-hashes(@shift-level-one);
-        }
-        for @shift-level-one -> $s_string {
-            if $string.contains($s_string) {
-                my $replacement = '{' ~ %shift-one{$s_string} ~ '}';
-                $string ~~ s:g/$s_string/$replacement/;
-            }
-        }
-
-    }
-    my int $items_f = $string.chars;
-    my int $items_i = 0;
-    my $coded-nums := nqp::list_s;
-    my int $i = 40 ** 2;
-    my int $triplet = 0;
-    sub items-elems {
-        $items_i - $items_f - 1;
-    }
-    while $items_i < $items_f {
-        my str $item = nqp::substr($string, $items_i++, 1);
-        # This is a shifted value, so process it as such
-        if $item eq '{' {
-            my str $item = nqp::substr($string, $items_i++, 1);;
-            my str $str;
-            # Grab the numbers up until the '}'
-            while $item ne '}' {
-                $str ~= $item;
-                $item = nqp::substr($string, $items_i++, 1);
-            }
-            for %base{@bases[@bases.end]}, $str.Int -> $num {
-                $triplet += $num * $i;
-                # We have our shift value now, so add it to the @coded-nums
-                # Push the shift character
-                $i = $i div 40;
-                # XXX Maybe we need to not check if elems == 0 since we may have pulled everything out?
-                if $i < 1 {
-                    $i = 40 ** 2;
-
-                    nqp::push_s($coded-nums, nqp::base_I(nqp::decont($triplet), 10));
-                    $triplet = 0;
-                }
-            }
-            if items-elems() == 0 {
-                nqp::push_s($coded-nums, nqp::base_I(nqp::decont($triplet), 10));
-                $triplet = 0;
-            }
-            next;
-        }
-
-        die "Can't find this letter in table “$item”" unless %base{$item}:exists;
-        $triplet += %base{$item} * $i;
-        $i = $i div 40;
-        if $i < 1 or items-elems() == 0 {
-            $i = 40 ** 2;
-            nqp::push_s($coded-nums, nqp::base_I(nqp::decont($triplet), 10));
-            $triplet = 0;
-        }
-    }
-    $coded-nums;
-}
-sub decode-base40-nums ( @coded-nums is copy, :@shift-one? ) is export {
+sub decode-base40-nums ( @bases, @coded-nums is copy, :@shift-one? ) is export {
     my @decoded-chars;
+    my %shift-one;
     if @shift-one {
-        init-shift-hashes(@shift-one);
-        if !%shift-one {
-            init-shift-hashes(@shift-one);
+        for ^@shift-one.elems {
+            %shift-one{@shift-one[$_]} = $_;
         }
     }
     while @coded-nums {
@@ -216,8 +184,8 @@ sub decode-base40-nums ( @coded-nums is copy, :@shift-one? ) is export {
                 $shift = True;
             }
             elsif $shift {
-                say "Trying to push char $char @shift-level-one[$char]";
-                @decoded-chars.push(@shift-level-one[$char]);
+                say "Trying to push char $char @shift-one[$char]";
+                @decoded-chars.push(@shift-one[$char]);
                 $shift = False;
             }
             # Otherwise just push it
