@@ -1,3 +1,4 @@
+#!/usr/bin/env perl6
 use JSON::Fast;
 use nqp;
 use Data::Dump;
