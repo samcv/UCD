@@ -2,10 +2,11 @@ use v6;
 use MONKEY-TYPING;
 use Data::Dump;
 use nqp;
+INIT print '.';
+unit module UCDlib:ver<1.0.0>;
 my $prefix = 'const static ';
 my Str $UNIDATA-folder = "UNIDATA";
 my Str $snippet-folder = 'snippets';
-INIT print '.';
 augment class Str {
     multi method split-trim ( Str $delimiter, Int $limit? ) {
         $limit ?? self.split($delimiter, $limit).».trim

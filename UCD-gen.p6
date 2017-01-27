@@ -3,9 +3,7 @@ use nqp;
 use Data::Dump;
 use lib 'lib';
 use UCDlib;
-use Set-Range;
-use seenwords;
-use EncodeBase40;
+use GenUniNameList;
 BEGIN print ".";
 INIT  say "\nStarting…";
 my Str $build-folder = "source";
@@ -87,104 +85,6 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$de
 sub dump {
     say 'Dumping %points';
     Dump-Range(900..1000, %points);
-}
-sub Generate_Name_List {
-    my $t0_nl = now;
-    my $max = %names.keys.map({$^a.Int}).max;
-    my %shift-one; # Stores the word to number mappings for the first shift level
-    my %shift-two; # Stores it for the second shift level
-    my %shift-three;
-    my @shift-one-array;
-    my $no-empty = False;
-    my %seen-words;
-    my $set-range = Set-Range.new;
-    my base40-string $base40-string;
-
-    my $seen-words = seen-words.new(levels-to-gen => 1);
-    sub get-shift-levels {
-        my %seen-words-shift-one; # Stores the words seen, and how many bytes we will save if we
-        my %seen-words-shift-two; # shift once or twice
-        my %seen-words-shift-three;
-        my $standard-charcount = 0;
-        for 0..$max -> $cp {
-            my str $cp_s = nqp::base_I(nqp::decont($cp), 10);
-            if nqp::existskey(%names, $cp_s) {
-                my $s := nqp::atkey(%names, $cp_s);
-                if $s.contains('<') {
-                    next;
-                }
-                $seen-words.saw-line($s);
-            }
-        }
-        $base40-string = $base40-string.new(shift-level-one => $seen-words.get-shift-one-array);
-
-    }
-    get-shift-levels(); # this is the sub directly above
-
-    my @names_l;
-    my $c-type = compute-type(40**3);
-    my $t1 = now;
-    my int $longest-name;
-    note "Starting generation of codepoint names…";
-    my %control-ranges;
-    for 0..$max -> $cp {
-        my str $cp_s = nqp::base_I(nqp::decont($cp), 10);
-        if nqp::existskey(%names, $cp_s) {
-            my $s := nqp::atkey(%names, $cp_s);
-            # XXX for now we just skip these
-            if $s.contains('<') {
-                unless $no-empty {
-                    if $s.match(/ ^ '<' (\S+) '>' $ /) {
-                        $set-range.add-to-range: $cp_s, 'uninames', “sprintf(out, "<$0-%.4X>", cp)”;
-                        $base40-string.push;
-                    }
-                    # XXX NYI
-                    elsif $s.contains( any('First', 'Last') ) {
-                    }
-                    else {
-                        die "name: $s, cp: $cp";
-                    }
-
-                }
-                next;
-            }
-            $longest-name = $s.chars if $s.chars > $longest-name;
-            $base40-string.push($s);
-        }
-        # If we have no name just push a 0
-        elsif !$no-empty {
-            $base40-string.push;
-        }
-    }
-    say "Took " ~ now - $t1 ~ " secs to go through all codepoints";
-    say "Joining codepoints";
-    my $t2 = now;
-    my $base40-joined = $base40-string.join(',');
-    my $t3 = now;
-    my $set-range-func = qq:to/END/;
-    char * get_uninames ( char * out, uint32_t cp ) \{
-            {set-range-generate-c($set-range, "cp")}
-
-        return 0;
-    \}
-    END
-    say "Took " ~ now - $t3 ~ " seconds to generate set range's";
-    my $string = join( '',
-                "#include <stdio.h>\n",
-                "#include <stdint.h>\n",
-                "#include <string.h>\n",
-                "#define uninames_elems $base40-string.elems()\n",
-                $set-range-func,
-                $base40-string.get-c-table,
-                $c-type ~ ' uninames[' ~ $base40-string.elems ~ '] = {' ~ "\n",
-                $base40-joined.break-into-lines(','),
-                "\};\n",
-                "#define LONGEST_NAME $longest-name\n",
-                slurp-snippets("names", "tail"),
-                );
-    say "Took " ~ now - $t3 ~ " seconds to the final part of name creation";
-    say "NAME GEN: took " ~ now - $t0_nl ~ " seconds to go through all the name generation code";
-    return $string;
 }
 sub DerivedNumericValues ( Str $filename ) {
     my %numerator-seen;
