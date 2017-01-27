@@ -101,11 +101,10 @@ sub Generate_Name_List {
     my %shift-two; # Stores it for the second shift level
     my %shift-three;
     my @shift-one-array;
-    my $no-empty = False;
+    my $no-empty = True;
     my %seen-words;
     my $set-range = Set-Range.new;
     my base40-string $base40-string;
-
     my $seen-words = seen-words.new(levels-to-gen => 1);
     sub get-shift-levels {
         my %seen-words-shift-one; # Stores the words seen, and how many bytes we will save if we
@@ -137,20 +136,13 @@ sub Generate_Name_List {
         my str $cp_s = nqp::base_I(nqp::decont($cp), 10);
         if nqp::existskey(%names, $cp_s) {
             my $s := nqp::atkey(%names, $cp_s);
-            # XXX for now we just skip these
             if $s.contains('<') {
-                unless $no-empty {
-                    if $s.match(/ ^ '<' (\S+) '>' $ /) {
-                        $set-range.add-to-range: $cp_s, 'uninames', “sprintf(out, "<$0-%.4X>", cp)”;
-                        $base40-string.push;
-                    }
-                    # XXX NYI
-                    elsif $s.contains( any('First', 'Last') ) {
-                    }
-                    else {
-                        die "name: $s, cp: $cp";
-                    }
-
+                if $s.match(/ ^ '<' (.*) '>' $ /) {
+                    $set-range.add-to-range: $cp_s, 'uninames', “sprintf(out, "<$0-%.4X>", cp);”, 0;
+                    $base40-string.push unless $no-empty;
+                }
+                else {
+                    die "name: $s, cp: $cp";
                 }
                 next;
             }
@@ -159,6 +151,7 @@ sub Generate_Name_List {
         }
         # If we have no name just push a 0
         elsif !$no-empty {
+            $set-range.add-to-range: $cp_s, “sprintf(out, "<unassigned-%.4X>", cp);”, 0;
             $base40-string.push;
         }
     }
@@ -169,7 +162,7 @@ sub Generate_Name_List {
     my $t3 = now;
     my $set-range-func = qq:to/END/;
     char * get_uninames ( char * out, uint32_t cp ) \{
-            {set-range-generate-c($set-range, "cp")}
+            {$set-range.generate-c("cp")}
 
         return 0;
     \}
@@ -344,6 +337,10 @@ sub NameAlias ( Str $property, Str $file ) {
 sub UnicodeData ( Str $file, Int $less = 0 ) {
     register-binary-property(<NFD_QC NFC_QC NFKD_QC NFG_QC Any Bidi_Mirrored>);
     my %seen-ccc;
+    #3400;<CJK Ideograph Extension A, First>;Lo;0;L;;;;;N;;;;;
+    our $first-point-cp;
+    my %First-point; # %First-point gets assigned a value if it matches as above
+    # and so is the first in a range inside UnicodeData.txt
     for slurp-lines $file {
         next if skip-line($_);
         my @parts = .split(';');
@@ -352,16 +349,8 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
             $suc, $slc, $stc) = @parts;
         my $cp = :16($code-str);
         next if $less != 0 and $cp > $less;
-        #if ($name eq '<control>' ) {
-        #    $name = sprintf '<control-%.4X>', $cp;
-        #}
         my %hash;
         %hash<Unicode_1_Name>            =? $u1name;
-        if $name {
-            nqp::bindkey(%names, nqp::base_I(nqp::decont($cp), 10), $name);
-        }
-        # We may not need to set the name in the hash in case we only rely on %names;
-        %hash<name>                      =? $name;
         %hash<gencat_name>               =? $gencat;
         %hash<General_Category>          =? $gencat;
         if $ccclass {
@@ -378,6 +367,7 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
         %hash<NFG_QC>  = True;
         %hash<Any>     = True;
         %hash<Bidi_Mirrored> = True if $bidimirrored eq 'Y';
+
         if $decmpspec {
             my @dec = $decmpspec.split(' ');
             if @dec[0].match(/'<'\w+'>'/) {
@@ -388,6 +378,47 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
             }
             %decomp_spec{$cp}<mapping> = @dec.».parse-base(16);
         }
+        # We may not need to set the name in the hash in case we only rely on %names;
+        if !$name {
+            die;
+        }
+        if $name.starts-with('<') {
+            if $name.ends-with(', Last>') {
+                $name ~~ s/', Last>'$/>/;
+                if %First-point {
+                    die "\%First-point: " ~ %First-point.gist ~ "\%hash: " ~ %hash.gist if %First-point !eqv %hash;
+                    say %hash.WHAT;
+                    apply-to-cp("$first-point-cp..$cp", %hash);
+                    say "Range: $first-point-cp..$cp";
+                    for $first-point-cp..$cp {
+                        nqp::bindkey(%names, nqp::base_I(nqp::decont($_), 10), $name);
+                    }
+                    say "Clearing \%First-point";
+                    %First-point := {};
+                    say "Clearing \$first-point-cp";
+                    $first-point-cp = Nil;
+                    next;
+                }
+                else {
+                    die;
+                }
+            }
+            elsif $name.ends-with(', First>') {
+                $first-point-cp = $cp;
+                say "Setting first-point-cp to $cp";
+                $name ~~ s/', First>'$/>/;
+                say "First NAMEE $name";
+                %First-point = %hash;
+                next;
+            }
+        }
+        # Bind the names hash we generate the Unicode Name C data from
+        nqp::bindkey(%names, nqp::base_I(nqp::decont($cp), 10), $name);
+
+        %hash<name>                      =? $name;
+
+        # 3400;<CJK Ideograph Extension A, First>;Lo;0;L;;;;;N;;;;;
+
         apply-to-cp($code-str, %hash);
     }
     # For now register it as a string enum, will change when a register-enum-property multi is made

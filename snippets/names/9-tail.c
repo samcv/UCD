@@ -43,13 +43,17 @@ int main (void) {
     int32_t cp = 0;
     Decompressor ds = {};
     ds.input_position = (const unsigned short *) &uninames;
-    int i;;
+    int i;
+    int ret;
     for (i = 0; i <= HIGHEST_NAME_CP; i++) {
-        eat_a_string(&ds);
-        if (ds.out_buf[0] == '\0') {
-            get_uninames(ds.out_buf, cp);
+        ret = get_uninames(ds.out_buf, cp);
+        if (ret == 0) {
+        }
+        else {
+            eat_a_string(&ds);
         }
         printf("U+%X '%s'\n", cp, ds.out_buf);
+
         cp++;
     }
     return 0;
