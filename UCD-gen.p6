@@ -471,30 +471,35 @@ sub make-enums {
     note "Making enums…";
     my @enums;
     say Dump %enumerated-properties if $debug-global;
-    for %enumerated-properties.keys -> $prop {
+    for %enumerated-properties.keys.sort -> $prop {
         my str $enum-str;
+        my @enum-str;
         my $type = %enumerated-properties{$prop}<type>;
         my $rev-hash = reverse-hash-int-only(%enumerated-properties{$prop});
         say $rev-hash if $debug-global;
         if $type eq 'Str' {
-            for $rev-hash.keys.sort {
-                $enum-str = ($enum-str, $indent, Q<">, $rev-hash{$_}, qq[",\n]).join;
+            for $rev-hash.keys.sort(+*) {
+                @enum-str.push($rev-hash{$_});
             }
-            $enum-str = (compute-type('char *'), $prop, "[", $rev-hash.elems, "] = \{\n", $enum-str, "\n\};\n").join;
+            $enum-str = compose-array compute-type('char *'), $prop, @enum-str;
         }
         elsif $type eq 'Int' {
-            for $rev-hash.keys.sort {
-                $enum-str = ($enum-str, $indent, $rev-hash{$_}, ",\n").join;
+            my Int $min = $rev-hash.values.».Int.min;
+            my Int $max = $rev-hash.values.».Int.max;
+            for $rev-hash.keys.sort(+*) {
+                @enum-str.push($rev-hash{$_});
             }
             say Dump $rev-hash if $debug-global;
-            $enum-str = (compute-type($rev-hash.values.».Int.max, $rev-hash.values.».Int.min ), " $prop", "[", $rev-hash.elems, "] = \{\n", $enum-str, "\n\};\n").join;
+            $enum-str = compose-array compute-type($max, $min), $prop, @enum-str;
         }
         else {
             die "Don't know how to make an enum of type '$type'";
         }
         # Create the #define's for the Property Value's
-        for $rev-hash.kv -> $enum-no, $prop-val {
-            my $prop-val-name = $prop-val.subst('-', 'minus');
+        @bitfield-h.push("/* $prop */");
+        for $rev-hash.sort(+*.key) {
+            my ($enum-no, $prop-val) = (.key, .value);
+            my $prop-val-name = $prop-val.subst('-', 'negative_');
             @bitfield-h.push("#define Uni_PVal_{$prop.uc}_$prop-val-name $enum-no");
         }
         @enums.push($enum-str);
