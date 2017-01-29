@@ -76,6 +76,12 @@ sub PValueAliases (Str $filename, %aliases, %aliases_to?) {
         }
     }
 }
+class pvalue-seen {
+    has %.seen-values;
+    method saw ($saw) {
+        %!seen-values{$saw} = True unless %!seen-values{$saw}:exists;
+    }
+}
 sub PNameAliases (Str $filename, %aliases, %aliases_to?) {
     for slurp-lines($filename) -> $line {
         next if skip-line($line);
@@ -184,20 +190,11 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$de
 sub Generate_Name_List {
     my $t0_nl = now;
     my $max = %names.keys.map({$^a.Int}).max;
-    my %shift-one; # Stores the word to number mappings for the first shift level
-    my %shift-two; # Stores it for the second shift level
-    my %shift-three;
-    my @shift-one-array;
     my $no-empty = True;
-    my %seen-words;
     my $set-range = Set-Range.new;
     my base40-string $base40-string;
     my $seen-words = seen-words.new(levels-to-gen => 1);
     sub get-shift-levels {
-        my %seen-words-shift-one; # Stores the words seen, and how many bytes we will save if we
-        my %seen-words-shift-two; # shift once or twice
-        my %seen-words-shift-three;
-        my $standard-charcount = 0;
         for 0..$max -> $cp {
             my str $cp_s = nqp::base_I(nqp::decont($cp), 10);
             if nqp::existskey(%names, $cp_s) {
@@ -213,7 +210,6 @@ sub Generate_Name_List {
     }
     get-shift-levels(); # this is the sub directly above
 
-    my @names_l;
     my $c-type = compute-type(40**3);
     my $t1 = now;
     my int $longest-name;
@@ -233,7 +229,6 @@ sub Generate_Name_List {
                 }
                 next;
             }
-            $longest-name = $s.chars if $s.chars > $longest-name;
             $base40-string.push($s);
         }
         # If we have no name just push a 0
@@ -258,7 +253,7 @@ sub Generate_Name_List {
     END
     say "Took " ~ now - $t3 ~ " seconds to generate set range's";
     my $names_h = ("#define uninames_elems $base40-string.elems()",
-                   "#define LONGEST_NAME $longest-name",
+                   "#define LONGEST_NAME " ~ $seen-words.longest-name,
                    "#define HIGHEST_NAME_CP $max",
                    "$set-rang-func-h;",
                    compose-array($c-type, 'uninames', $base40-string.elems, $base40-joined, :header),
@@ -276,8 +271,8 @@ sub Generate_Name_List {
     return $string;
 }
 sub DerivedNumericValues ( Str $filename ) {
-    my %numerator-seen;
-    my %denominator-seen;
+    my $numerator-seen = pvalue-seen.new;
+    my $denominator-seen = pvalue-seen.new;
     for slurp-lines($filename) {
         next if skip-line($_);
         my @parts = .split-trim([';','#']);
@@ -291,13 +286,14 @@ sub DerivedNumericValues ( Str $filename ) {
             $numerator = $number;
             $denominator = 1;
         }
-        %numerator-seen{$numerator} = True;
-        %denominator-seen{$denominator} = True;
-        my %point = 'Numeric_Value_Numerator' => $numerator.Int, 'Numeric_Value_Denominator' => $denominator.Int;
+        $numerator-seen.saw($numerator);
+        $denominator-seen.saw($denominator);
+        my %point = 'Numeric_Value_Numerator' => $numerator.Int,
+            'Numeric_Value_Denominator' => $denominator.Int;
         apply-to-cp($cp, %point);
     }
-    register-enum-property('Numeric_Value_Denominator', 0, %denominator-seen);
-    register-enum-property('Numeric_Value_Numerator', 0, %numerator-seen);
+    register-enum-property('Numeric_Value_Denominator', 0, $denominator-seen);
+    register-enum-property('Numeric_Value_Numerator', 0, $numerator-seen);
 }
 sub binary-property ( Int $column, Str $filename ) {
     my %props-seen;
@@ -317,7 +313,7 @@ sub binary-property ( Int $column, Str $filename ) {
     register-binary-property(%props-seen.keys.sort);
 }
 sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filename ) {
-    my %seen-values;
+    my $seen-value = pvalue-seen.new;
     my %points-by-range;
     my Int $i = 0;
     for slurp-lines($filename) {
@@ -325,12 +321,11 @@ sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filenam
         my @parts = .split-trim([';','#'], $column + 2);
         my $range = @parts[0];
         my $prop-val = @parts[$column];
-        %seen-values{$prop-val} = True;
-        my %point;
-        %point{$propname} = $prop-val;
+        $seen-value.saw($prop-val);
+        my %point = $propname => $prop-val;
         %points-by-range{$range} = %point;
     }
-    my %enum = register-enum-property($propname, $negname, %seen-values);
+    my %enum = register-enum-property($propname, $negname, $seen-value);
     for %points-by-range.keys -> $range {
         %points-by-range{$range}{$propname} = %enum{%points-by-range{$range}{$propname}};
         apply-to-cp($range, %points-by-range{$range});
@@ -350,9 +345,13 @@ sub register-binary-property (+@names) {
 sub compute-bitwidth ( Int $max ) {
     $max.base(2).chars;
 }
+multi sub register-enum-property (Str $propname, $negname, %seen-values) {
+    die "Deprecated register-enum-property called with prop: $propname";
+}
 # Eventually we will make a multi that can take ints
-sub register-enum-property (Str $propname, $negname, %seen-values) {
+multi sub register-enum-property (Str $propname, $negname, pvalue-seen $seen-values) {
     my %enum;
+    my %seen-values = $seen-values.seen-values;
     my $type = $negname.WHAT.^name;
     note "Registering type $type enum property $propname";
     say Dump %seen-values if $debug-global;
@@ -414,12 +413,6 @@ sub PValueAlias ( Str $property, Str $file ) {
         apply-to-cp(@parts[0], %hash)
     }
 }
-class pvalue-seen {
-    has %.seen-values;
-    method saw ($saw) {
-        %!seen-values{$saw} = True unless %!seen-values{$saw}:exists;
-    }
-}
 
 sub UnicodeData ( Str $file, Int $less = 0 ) {
     register-binary-property(<NFD_QC NFC_QC NFKD_QC NFG_QC Any Bidi_Mirrored>);
@@ -466,22 +459,18 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
             %decomp_spec{$cp}<mapping> = @dec.».parse-base(16);
         }
         # We may not need to set the name in the hash in case we only rely on %names;
-        if !$name {
-            die;
-        }
+        die if !$name;
         if $name.starts-with('<') {
             if $name.ends-with(', Last>') {
                 $name ~~ s/', Last>'$/>/;
                 if %First-point {
                     die "\%First-point: " ~ %First-point.gist ~ "\%hash: " ~ %hash.gist if %First-point !eqv %hash;
                     apply-to-cp("$first-point-cp..$cp", %hash);
-                    say "Fountd Range in UnicodeData: $first-point-cp..$cp";
+                    say "Found Range in UnicodeData: $first-point-cp..$cp";
                     for $first-point-cp..$cp {
                         nqp::bindkey(%names, nqp::base_I(nqp::decont($_), 10), $name);
                     }
-                    say "Clearing \%First-point";
                     %First-point := {};
-                    say "Clearing \$first-point-cp";
                     $first-point-cp = Nil;
                     next;
                 }
@@ -500,15 +489,12 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
         nqp::bindkey(%names, nqp::base_I(nqp::decont($cp), 10), $name);
 
         %hash<name>                      =? $name;
-
-        # 3400;<CJK Ideograph Extension A, First>;Lo;0;L;;;;;N;;;;;
-
         apply-to-cp($code-str, %hash);
     }
     # For now register it as a string enum, will change when a register-enum-property multi is made
-    register-enum-property("Canonical_Combining_Class", 0, $seen-ccc.seen-values);
-
+    register-enum-property("Canonical_Combining_Class", 0, $seen-ccc);
 }
+
 sub apply-to-cp (Str $range-str, Hash $hashy) {
     my $range;
     # If it contains `..` then it is a range
@@ -525,7 +511,6 @@ sub apply-to-cp (Str $range-str, Hash $hashy) {
     else {
         die "Unknown range '$range-str'";
     }
-
 }
 sub apply-to-points (Int $cp, Hash $hashy) {
     for $hashy.keys -> $key {
@@ -757,18 +742,8 @@ sub dump-json ( Bool $dump ) {
         write-file(%points.VAR.name ~ '.json',  to-json(%points));
         write-file(%decomp_spec.VAR.name ~ '.json',  to-json(%decomp_spec));
     }
-    for %enumerated-properties, %binary-properties {
+    for %enumerated-properties, %binary-properties, %PropertyValueAliases,
+       %PropertyNameAliases, %PropertyNameAliases_to, %PropertyValueAliases_to {
         write-file(.VAR.name ~ '.json', to-json($_));
     }
-    #write-file(%enumerated-properties.VAR.name ~ '.json',  to-json(%enumerated-properties));
-    #write-file(%binary-properties.VAR.name ~ '.json',  to-json(%binary-properties));
-}
-sub dump(*@v is raw) {
-    my $s;
-    for @v {
-        my $varname = '';
-        try { $varname = .VAR.name };
-        $s ~= $varname ?? $varname ~ ':  ' ~ Dump $s !! Dump $s;
-    }
-    $s
 }

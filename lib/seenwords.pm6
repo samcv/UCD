@@ -7,6 +7,7 @@ class seen-words is export {
     has %seen-words-shift-one;
     has %seen-words-shift-two;
     has %seen-words-shift-three;
+    has Int $.longest-name = 0;
 
 
     has $.levels-to-gen = 0;
@@ -17,6 +18,7 @@ class seen-words is export {
             %seen-words-shift-two{$_} += (.chars * 2/3) - 2/3 * 3; # for first and second shifts
             %seen-words-shift-three{$_} += (.chars * 2/3) - 2/3 * 4;
         }
+        $!longest-name = $line.chars if $line.chars > $!longest-name;
     }
     method get-shift-one {
         if !%shift-one {
