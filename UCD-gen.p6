@@ -59,13 +59,10 @@ sub PValueAliases (Str $filename, %aliases, %aliases_to?) {
     for slurp-lines($filename) -> $line {
         next if skip-line($line);
         my @parts = $line.split-trim(';');
-        say "Parts: " ~ @parts.perl;
         my $prop-name = @parts.shift;
         my $short-pvalue = @parts.shift;
         my $long-pvalue = @parts[0];
-        say "prop-name $prop-name short-pvalue $short-pvalue long-pvalue $long-pvalue";
         $prop-name = get-full-propname($prop-name);
-        say "Full-propname $prop-name";
         %aliases{$prop-name}{$short-pvalue} = @parts;
         if defined %aliases_to {
             %aliases_to{$prop-name}{$long-pvalue} = $long-pvalue;
@@ -661,13 +658,34 @@ sub make-bitfield-rows {
         $i++;
         @bitfield-h.push("    unsigned int $bin :1;");
     }
+    my $enum-prop-nqp := nqp::hash;
     for %enumerated-properties.keys.sort({%enumerated-properties{$^a}<bitwidth> cmp %enumerated-properties{$^b}<bitwidth>}) -> $property {
         %prop-to-code{$property} = $i;
         %code-to-prop{$i} = $property;
         $i++;
         my $bitwidth = %enumerated-properties{$property}<bitwidth>;
         @bitfield-h.push("    unsigned int $property :$bitwidth;");
+        my $this-prop := nqp::hash;
+        for %enumerated-properties{$property}.kv -> $key, $value {
+            next if $key eq any('name', 'bitwidth');
+            my str $key_s = $key;
+            my str $value_s;
+            if nqp::istype($value, Int) {
+                $value_s = nqp::base_I(nqp::decont($value), 10);
+            }
+            elsif nqp::istype($value, Str) {
+                $value_s = nqp::unbox_s($value);
+            }
+            elsif nqp::istype($value, str) {
+                $value_s = $value;
+            }
+            nqp::bindkey($this-prop, $key_s, $value_s);
+        }
+        nqp::bindkey($enum-prop-nqp, $property, $this-prop);
+
     }
+    say $enum-prop-nqp;
+    say $enum-prop-nqp<Canonical_Combining_Class><0>.WHAT;
     @bitfield-h.push("\};");
     @bitfield-h.push("typedef struct binary_prop_bitfield binary_prop_bitfield;");
     my $bitfield-rows := nqp::list_s;
@@ -685,24 +703,26 @@ sub make-bitfield-rows {
     my $t1 = now;
     for %points.keys.sort(+*) -> $point {
         my $bitfield-columns := nqp::list_s;
-        for @code-to-prop-keys -> $propcode {
-            my $prop = %code-to-prop{$propcode};
+        for @code-sorted-props -> $prop {
             if %points{$point}{$prop}:exists {
-                if nqp::existskey(%binary-properties, $prop) {
+                if %binary-properties{$prop}:exists {
                     nqp::push_s($bitfield-columns, nqp::unbox_s(%points{$point}{$prop} ?? '1' !! '0'));
                 }
-                elsif nqp::existskey(%enumerated-properties, $prop) {
-                    my $enum := %points{$point}{$prop};
+                elsif nqp::existskey($enum-prop-nqp, $prop) {
+                    my str $enum = nqp::base_I(nqp::decont(%points{$point}{$prop}), 10);
                     # If the key exists we need to look up the value
                     if %enumerated-properties{$prop}{$enum}:exists {
-                        $enum := %enumerated-properties{$prop}{ $enum };
-                        nqp::push_s($bitfield-columns, nqp::base_I(nqp::decont($enum),10));
+                        my $e = %enumerated-properties{$prop}{$enum};
+                        say $e.WHAT;
+                        $enum = nqp::base_I(nqp::decont($e), 10);
+                        say $enum.WHAT;
+                        nqp::push_s($bitfield-columns, $enum);
                     }
                     # If it doesn't exist it's an Int property. Eventually we should try and look
                     # up the enum type in the hash
                     # XXX make it so we have consistent functionality for Int and non Int enums
                     else {
-                        nqp::push_s($bitfield-columns, nqp::base_I(nqp::decont($enum),10));
+                        nqp::push_s($bitfield-columns, $enum);
                     }
                 }
                 else {
