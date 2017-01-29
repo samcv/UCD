@@ -51,15 +51,6 @@ sub slurp-lines ( Str $filename ) returns Seq is export {
     note "Reading $filename.txt…";
     "$UNIDATA-folder/$filename.txt".IO.slurp.lines orelse die;
 }
-sub skip-line ( Str $line ) is export {
-    if $line.starts-with('#') or $line eq '' {
-        return True;
-    }
-    elsif $line.starts-with(' ') {
-        return True if $line.match(/^\s*$/);
-    }
-    False;
-}
 sub Dump-Range ( Range $range, Hash $hashy ) is export {
     for $range.lazy -> $point {
         say $point;

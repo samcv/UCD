@@ -1,5 +1,6 @@
 #!/usr/bin/env perl6
 use JSON::Fast;
+use MONKEY-TYPING;
 use nqp;
 use Data::Dump;
 use lib 'lib';
@@ -14,16 +15,92 @@ my Str $build-folder = "source";
 my Str $snippets-folder = "snippets";
 # stores lines of bitfield.h
 our @bitfield-h;
-my %points;
-my %names = nqp::hash;
-my %binary-properties;
+my %points; # Stores all the cp's property values of all types
+my %names = nqp::hash; # Unicode Name hash for generating the name table
+my %binary-properties; # Stores the binary property names
+# Stores enum prop names and also the property
+# codes which are just internal numbers to represent it in the C datastructure
 my %enumerated-properties;
+# Stores all of the properties. The keys of %binary-properties and %enum-properties
+# get assigned to keys of this hash
 my %all-properties;
+# Stores the decomposition data for NFD
 my %decomp_spec;
+# Stores PropertyValueAliases from PropertyValueAliases.txt
+# Used to go from short names that may be used in the data files to the full names
+my %PropertyValueAliases;
+my %PropertyNameAliases;
+# Stores Property Aliases or Property Value Aliases to their Full Name mappings
+my %PropertyNameAliases_to;
+my %PropertyValueAliases_to;
+my %missing;
+my $missing-str = '# @missing';
+sub missing (Str $line is copy) {
+    # @missing: 0000..10FFFF; cjkAccountingNumeric; NaN
+    die unless $line.starts-with($missing-str);
+    $line ~~ s/$missing-str': '//;
+    my @parts = $line.split-trim(';');
+    %missing{@parts[1]} = @parts[2];
+}
+sub skip-line ( Str $line ) is export {
+    if $line eq '' {
+        return True;
+    }
+    elsif $line.starts-with('#') {
+        missing($line) if $line.starts-with($missing-str);
+        return True;
+    }
+    elsif $line.starts-with(' ') {
+        return True if $line.match(/^\s*$/);
+    }
+    False;
+}
+sub PValueAliases (Str $filename, %aliases, %aliases_to?) {
+    for slurp-lines($filename) -> $line {
+        next if skip-line($line);
+        my @parts = $line.split-trim(';');
+        say "Parts: " ~ @parts.perl;
+        my $prop-name = @parts.shift;
+        my $short-pvalue = @parts.shift;
+        my $long-pvalue = @parts[0];
+        say "prop-name $prop-name short-pvalue $short-pvalue long-pvalue $long-pvalue";
+        $prop-name = get-full-propname($prop-name);
+        say "Full-propname $prop-name";
+        %aliases{$prop-name}{$short-pvalue} = @parts;
+        if defined %aliases_to {
+            %aliases_to{$prop-name}{$long-pvalue} = $long-pvalue;
+            %aliases_to{$prop-name}{$short-pvalue} = $long-pvalue;
+            for @parts {
+                %aliases_to{$prop-name}{$_} = $long-pvalue;
+            }
+        }
+    }
+}
+sub PNameAliases (Str $filename, %aliases, %aliases_to?) {
+    for slurp-lines($filename) -> $line {
+        next if skip-line($line);
+        my @parts = $line.split-trim(';');
+        my $short-name = @parts.shift;
+        my $long-name = @parts.shift;
+        push %aliases{$long-name}, $short-name;
+        push %aliases{$long-name}, $_ for @parts;
+        if defined %aliases_to {
+            %aliases_to{$long-name} = $long-name;
+            %aliases_to{$short-name} = $long-name;
+            for @parts {
+                %aliases_to{$_} = $long-name;
+            }
+        }
+    }
+}
+sub get-property-fullname (Str $name) {
+
+}
 my %point-to-struct;
 my %bitfields;
 my %point-index = nqp::hash;
 my $debug-global = False;
+my $less-global;
 my int $bin-index = -1;
 my $indent = "\c[SPACE]" x 4;
 sub write-file ( Str $filename is copy, Str $text ) {
@@ -40,24 +117,34 @@ sub start-routine {
         mkdir $build-folder;
     }
 }
-
 sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$debug = False, Bool :$names-only = False, Bool :$numeric-value-only = False ) {
     $debug-global = $debug;
+    $less-global = $less;
     start-routine();
+    PNameAliases("PropertyAliases", %PropertyNameAliases, %PropertyNameAliases_to);
+    PValueAliases("PropertyValueAliases", %PropertyValueAliases, %PropertyValueAliases_to);
     my $name-file;
     DerivedNumericValues('extracted/DerivedNumericValues');
     UnicodeData("UnicodeData", $less);
+    enumerated-property(1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth');
+
     unless $numeric-value-only {
         $name-file = Generate_Name_List();
     }
     unless $names-only or $numeric-value-only {
-        enumerated-property(1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType');
+        my @enum-data =
+            (1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType'),
+            (1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
+        for @enum-data {
+            enumerated-property(|$_);
+        }
+        #enumerated-property(1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType');
 
-        enumerated-property(1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
+        #enumerated-property(1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
     }
     unless $less or $names-only or $numeric-value-only {
-        enumerated-property(1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth');
-        enumerated-property(1, 'N', 'East_Asian_Width', 'EastAsianWidth');
+        # The values in this file are already in DerivedEastAsianWidth
+        #enumerated-property(1, 'N', 'East_Asian_Width', 'EastAsianWidth');
         enumerated-property(1, '', 'Jamo_Short_Name', 'Jamo');
         binary-property(1, 'PropList');
         enumerated-property(1, 'L', 'Bidi_Class', 'extracted/DerivedBidiClass');
@@ -70,7 +157,6 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$de
         # Not needed, in UnicodeData ?
         # Also we don't account for this case where we try and add a property that already exists
         binary-property(1, 'extracted/DerivedBinaryProperties');
-        #NameAlias("NameAlias", "NameAliases" );
         tweak_nfg_qc();
     }
     dump-json($dump);
@@ -94,10 +180,6 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$de
         write-file('names.c', $name-file);
     }
     say "Took {now - INIT now} seconds.";
-}
-sub dump {
-    say 'Dumping %points';
-    Dump-Range(900..1000, %points);
 }
 sub Generate_Name_List {
     my $t0_nl = now;
@@ -219,6 +301,7 @@ sub DerivedNumericValues ( Str $filename ) {
 }
 sub binary-property ( Int $column, Str $filename ) {
     my %props-seen;
+    my Int $i = 0;
     for slurp-lines($filename) {
         next if skip-line($_);
         my @parts = .split-trim([';','#'], $column + 2);
@@ -228,13 +311,15 @@ sub binary-property ( Int $column, Str $filename ) {
         my %point;
         %point{$property} = True;
         apply-to-cp($range, %point);
+        last if $less-global and $less-global > $i;
+        $i++;
     }
     register-binary-property(%props-seen.keys.sort);
 }
 sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filename ) {
-    # XXX program for @ references for ranges in the comments
     my %seen-values;
     my %points-by-range;
+    my Int $i = 0;
     for slurp-lines($filename) {
         next if skip-line($_);
         my @parts = .split-trim([';','#'], $column + 2);
@@ -245,7 +330,6 @@ sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filenam
         %point{$propname} = $prop-val;
         %points-by-range{$range} = %point;
     }
-    # Eventually this may be able to be wrapped into register-enum-property
     my %enum = register-enum-property($propname, $negname, %seen-values);
     for %points-by-range.keys -> $range {
         %points-by-range{$range}{$propname} = %enum{%points-by-range{$range}{$propname}};
@@ -260,7 +344,7 @@ sub register-binary-property (+@names) {
             note "Tried to add $name but binary property already exists";
         }
         %binary-properties{$name} = name => $name, bitwidth => 1;
-        %all-properties{$name} = %binary-properties{$name};
+        %all-properties{$name} := %binary-properties{$name};
     }
 }
 sub compute-bitwidth ( Int $max ) {
@@ -297,7 +381,7 @@ sub register-enum-property (Str $propname, $negname, %seen-values) {
     %enumerated-properties{$propname}<name> = $propname;
     %enumerated-properties{$propname}<bitwidth> = compute-bitwidth($max);
     %enumerated-properties{$propname}<type> = $type;
-    %all-properties{$propname} = %enumerated-properties{$propname};
+    %all-properties{$propname} := %enumerated-properties{$propname};
     return %enum;
 }
 sub tweak_nfg_qc {
@@ -321,7 +405,7 @@ sub tweak_nfg_qc {
         }
     }
 }
-sub NameAlias ( Str $property, Str $file ) {
+sub PValueAlias ( Str $property, Str $file ) {
     for slurp-lines $file {
         next if skip-line($_);
         my @parts = .split-trim(';');
@@ -330,9 +414,16 @@ sub NameAlias ( Str $property, Str $file ) {
         apply-to-cp(@parts[0], %hash)
     }
 }
+class pvalue-seen {
+    has %.seen-values;
+    method saw ($saw) {
+        %!seen-values{$saw} = True unless %!seen-values{$saw}:exists;
+    }
+}
+
 sub UnicodeData ( Str $file, Int $less = 0 ) {
     register-binary-property(<NFD_QC NFC_QC NFKD_QC NFG_QC Any Bidi_Mirrored>);
-    my %seen-ccc;
+    my $seen-ccc = pvalue-seen.new;
     #3400;<CJK Ideograph Extension A, First>;Lo;0;L;;;;;N;;;;;
     our $first-point-cp;
     my %First-point; # %First-point gets assigned a value if it matches as above
@@ -350,7 +441,7 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
         %hash<gencat_name>               =? $gencat;
         %hash<General_Category>          =? $gencat;
         if $ccclass {
-            %seen-ccc{$ccclass} = True unless %seen-ccc{$ccclass}:exists;
+            $seen-ccc.saw($ccclass);
             %hash<Canonical_Combining_Class> = $ccclass.Int;
         }
         %hash<Bidi_Class>                =? $bidiclass;
@@ -383,9 +474,8 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
                 $name ~~ s/', Last>'$/>/;
                 if %First-point {
                     die "\%First-point: " ~ %First-point.gist ~ "\%hash: " ~ %hash.gist if %First-point !eqv %hash;
-                    say %hash.WHAT;
                     apply-to-cp("$first-point-cp..$cp", %hash);
-                    say "Range: $first-point-cp..$cp";
+                    say "Fountd Range in UnicodeData: $first-point-cp..$cp";
                     for $first-point-cp..$cp {
                         nqp::bindkey(%names, nqp::base_I(nqp::decont($_), 10), $name);
                     }
@@ -401,9 +491,7 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
             }
             elsif $name.ends-with(', First>') {
                 $first-point-cp = $cp;
-                say "Setting first-point-cp to $cp";
                 $name ~~ s/', First>'$/>/;
-                say "First NAMEE $name";
                 %First-point = %hash;
                 next;
             }
@@ -418,7 +506,7 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
         apply-to-cp($code-str, %hash);
     }
     # For now register it as a string enum, will change when a register-enum-property multi is made
-    register-enum-property("Canonical_Combining_Class", 0, %seen-ccc);
+    register-enum-property("Canonical_Combining_Class", 0, $seen-ccc.seen-values);
 
 }
 sub apply-to-cp (Str $range-str, Hash $hashy) {
@@ -466,20 +554,56 @@ sub apply-to-points (Int $cp, Hash $hashy) {
         }
     }
 }
-
+sub get-full-pvalue (Str $prop is copy, Str $pvalue) {
+    $prop = get-full-propname($prop);
+    if %PropertyValueAliases_to{$prop}{$pvalue}:exists {
+        return %PropertyValueAliases_to{$prop}{$pvalue};
+    }
+    else {
+        note "Could not find “$pvalue” in property “$prop” in " ~
+             '%PropertyValueAliases_to hash';
+        if %PropertyValueAliases_to{$prop}:exists {
+            note "\%PropertyValueAliases_to\{$prop\}: " ~
+                Dump %PropertyValueAliases_to{$prop};
+        }
+        else {
+            note '%PropertyValueAliases_to: ' ~ Dump %PropertyValueAliases_to;
+        }
+    }
+    $pvalue;
+}
+sub get-full-propname (Str $prop) returns Str {
+    state @non-official-properties =
+        'Numeric_Value_Numerator', 'Numeric_Value_Denominator';
+    say "Looking up full propname for $prop" if $debug-global;
+    if %PropertyNameAliases_to{$prop}:exists {
+        return %PropertyNameAliases_to{$prop};
+    }
+    elsif $prop ne @non-official-properties.any {
+        note "Could not find property “$prop” in " ~
+             '%PropertyValueAliases_to hash';
+    }
+    $prop;
+}
 sub make-enums {
     note "Making enums…";
     my @enums;
     say Dump %enumerated-properties if $debug-global;
     for %enumerated-properties.keys.sort -> $prop {
+        my $full-prop-name = get-full-propname($prop);
+        say "make-enums prop[$prop] fullname [$full-prop-name]";
         my str $enum-str;
         my @enum-str;
         my $type = %enumerated-properties{$prop}<type>;
         my $rev-hash = reverse-hash-int-only(%enumerated-properties{$prop});
+
         say $rev-hash if $debug-global;
         if $type eq 'Str' {
-            for $rev-hash.keys.sort(+*) {
-                @enum-str.push($rev-hash{$_});
+            my Int $max = $rev-hash.keys.sort(+*).List.max;
+            loop ( my $i = 0; $i <= $max; $i++ ) {
+                my $pvalue = $rev-hash{$i};
+                my $full-pvalue = get-full-pvalue($prop, $pvalue);
+                @enum-str.push($full-pvalue);
             }
             $enum-str = compose-array compute-type('char *'), $prop, @enum-str;
         }
@@ -627,13 +751,24 @@ sub make-bitfield-rows {
     say "Took {now - $t2} seconds to join all the seen bitfield rows";
     return @array.join("\n");
 }
-
 sub dump-json ( Bool $dump ) {
     note "Converting data to JSON...";
     if $dump {
         write-file(%points.VAR.name ~ '.json',  to-json(%points));
         write-file(%decomp_spec.VAR.name ~ '.json',  to-json(%decomp_spec));
     }
-    write-file(%enumerated-properties.VAR.name ~ '.json',  to-json(%enumerated-properties));
-    write-file(%binary-properties.VAR.name ~ '.json',  to-json(%binary-properties));
+    for %enumerated-properties, %binary-properties {
+        write-file(.VAR.name ~ '.json', to-json($_));
+    }
+    #write-file(%enumerated-properties.VAR.name ~ '.json',  to-json(%enumerated-properties));
+    #write-file(%binary-properties.VAR.name ~ '.json',  to-json(%binary-properties));
+}
+sub dump(*@v is raw) {
+    my $s;
+    for @v {
+        my $varname = '';
+        try { $varname = .VAR.name };
+        $s ~= $varname ?? $varname ~ ':  ' ~ Dump $s !! Dump $s;
+    }
+    $s
 }
