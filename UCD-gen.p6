@@ -132,7 +132,7 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$de
     my $name-file;
     DerivedNumericValues('extracted/DerivedNumericValues');
     UnicodeData("UnicodeData", $less);
-    enumerated-property(1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth');
+    enumerated-property(1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth') unless $less < 200;
 
     unless $numeric-value-only {
         $name-file = Generate_Name_List();
@@ -584,17 +584,17 @@ sub make-enums {
 
         say $rev-hash if $debug-global;
         if $type eq 'Str' {
-            my Int $max = $rev-hash.keys.sort(+*).List.max;
-            loop ( my $i = 0; $i <= $max; $i++ ) {
-                my $pvalue = $rev-hash{$i};
+            for $rev-hash.keys.sort(+*) {
+                my $pvalue = $rev-hash{$_};
                 my $full-pvalue = get-full-pvalue($prop, $pvalue);
                 @enum-str.push($full-pvalue);
             }
             $enum-str = compose-array compute-type('char *'), $prop, @enum-str;
         }
         elsif $type eq 'Int' {
-            my Int $min = $rev-hash.values.».Int.min;
-            my Int $max = $rev-hash.values.».Int.max;
+            my Int $min = +$rev-hash.values.min(+*);
+            my Int $max = +$rev-hash.values.max(+*);
+            say "Min $min, Max $max";
             for $rev-hash.keys.sort(+*) {
                 @enum-str.push($rev-hash{$_});
             }
@@ -673,8 +673,17 @@ sub make-bitfield-rows {
     my $bitfield-rows := nqp::list_s;
     my %bitfield-rows-seen = nqp::hash;
     my @code-to-prop-keys = %code-to-prop.keys.sort(+*);
+    say @code-to-prop-keys.VAR.name ~ Dump @code-to-prop-keys;
+    my @code-sorted-props = %prop-to-code.sort(+*.value).».key;
+    for ^@code-sorted-props -> $elem {
+        my $p = %code-to-prop{$elem};
+        say "elem $elem, p $p";
+        die %code-to-prop.VAR.name ~ Dump %code-to-prop if %code-to-prop{$elem} ne @code-sorted-props[$elem];
+        die if %prop-to-code{$p} != $elem;
+    }
+
     my $t1 = now;
-    quietly for %points.keys.sort(+*) -> $point {
+    for %points.keys.sort(+*) -> $point {
         my $bitfield-columns := nqp::list_s;
         for @code-to-prop-keys -> $propcode {
             my $prop = %code-to-prop{$propcode};
