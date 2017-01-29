@@ -710,13 +710,13 @@ sub make-bitfield-rows {
                 }
                 elsif nqp::existskey($enum-prop-nqp, $prop) {
                     my str $enum = nqp::base_I(nqp::decont(%points{$point}{$prop}), 10);
+                    my $enum-prop-nqp_prop := nqp::atkey($enum-prop-nqp, $prop);
                     # If the key exists we need to look up the value
-                    if %enumerated-properties{$prop}{$enum}:exists {
-                        my $e = %enumerated-properties{$prop}{$enum};
-                        say $e.WHAT;
-                        $enum = nqp::base_I(nqp::decont($e), 10);
-                        say $enum.WHAT;
-                        nqp::push_s($bitfield-columns, $enum);
+                    if nqp::existskey($enum-prop-nqp_prop, $enum) {
+                        my $e := nqp::atkey($enum-prop-nqp_prop, $enum);
+                        #say $e.WHAT;
+                        #say $enum.WHAT;
+                        nqp::push_s($bitfield-columns, $e);
                     }
                     # If it doesn't exist it's an Int property. Eventually we should try and look
                     # up the enum type in the hash
