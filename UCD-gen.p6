@@ -706,32 +706,31 @@ sub make-bitfield-rows {
     my $t1 = now;
     for %points.keys.sort(+*) -> $point {
         my $bitfield-columns := nqp::list_s;
+        my $points-point := nqp::atkey(%points, $point);
         for @code-sorted-props -> $prop {
-            if %points{$point}{$prop}:exists {
-                if nqp::existskey($bin-prop-nqp, $prop) {
+            if $points-point{$prop}:exists {
+                nqp::if( nqp::existskey($bin-prop-nqp, $prop), (
                     nqp::push_s($bitfield-columns,
-                        nqp::if(%points{$point}{$prop}, '1', '0')
+                        nqp::if($points-point{$prop}, '1', '0')
                     );
-                }
-                elsif nqp::existskey($enum-prop-nqp, $prop) {
-                    my $enum := nqp::base_I(nqp::decont(%points{$point}{$prop}), 10);
-                    # If the key exists we need to look up the value
-                    my $enum-prop-nqp-prop := nqp::atkey($enum-prop-nqp, $prop);
-                    if nqp::existskey($enum-prop-nqp-prop, $enum) {
-                        #say $e.WHAT;
-                        #say $enum.WHAT;
-                        nqp::push_s($bitfield-columns, nqp::atkey($enum-prop-nqp-prop, $enum));
-                    }
-                    # If it doesn't exist it's an Int property. Eventually we should try and look
-                    # up the enum type in the hash
-                    # XXX make it so we have consistent functionality for Int and non Int enums
-                    else {
-                        nqp::push_s($bitfield-columns, $enum);
-                    }
-                }
-                else {
-                    die;
-                }
+                ), (nqp::if(nqp::existskey($enum-prop-nqp, $prop), (
+                        my $enum := nqp::base_I(nqp::decont($points-point{$prop}), 10);
+                        # If the key exists we need to look up the value
+                        my $enum-prop-nqp-prop := nqp::atkey($enum-prop-nqp, $prop);
+                        # If it doesn't exist we already have the property code.
+                        # Eventually we may want to try and have it so all things
+                        # either have or don't have the property for consistency
+                        # XXX
+                        nqp::if( nqp::existskey($enum-prop-nqp-prop, $enum), (
+                            nqp::push_s($bitfield-columns, nqp::atkey($enum-prop-nqp-prop, $enum));
+                        ), (
+                            nqp::push_s($bitfield-columns, $enum);
+                           )
+                        );
+                    ), (nqp::die('oh no') )
+                    ),
+                    )
+                );
             }
             else {
                 nqp::push_s($bitfield-columns, '0');
@@ -755,9 +754,9 @@ sub make-bitfield-rows {
     my $t2 = now;
     say "Finished computing all rows, took {now - $t1}. Now creating the final unduplicated version.";
     for %bitfield-rows-seen.sort(+*.value).».kv -> ($row-str, $index) {
-        nqp::push_s($bitfield-rows, nqp::concat($row-str, "/* index $index */"));
+        nqp::push_s($bitfield-rows, '    {' ~ $row-str ~ "\},/* index $index */");
     }
-    $binary-struct-str = '{' ~ nqp::join("\}\n\{", $bitfield-rows) ~ '}';
+    $binary-struct-str = nqp::join("\n", $bitfield-rows);
     my @array;
     my $prefix = get-prefix();
     push @array, qq:to/END/;
