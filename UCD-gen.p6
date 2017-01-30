@@ -75,7 +75,7 @@ sub PValueAliases (Str $filename, %aliases, %aliases_to?) {
 }
 class pvalue-seen {
     has %.seen-values;
-    method bin-seen-values {
+    method bin-seen-keys {
         %!seen-values.sort.keys;
     }
     method saw ($saw) {
@@ -144,6 +144,8 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$de
         for @enum-data {
             enumerated-property(|$_);
         }
+        #binary-property(1, 'extracted/DerivedBinaryProperties');
+
         #enumerated-property(1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType');
 
         #enumerated-property(1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
@@ -162,7 +164,6 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$de
         enumerated-property(1, 'Other', 'Line_Break', 'LineBreak');
         # Not needed, in UnicodeData ?
         # Also we don't account for this case where we try and add a property that already exists
-        binary-property(1, 'extracted/DerivedBinaryProperties');
         tweak_nfg_qc();
     }
     dump-json($dump);
@@ -271,42 +272,38 @@ sub Generate_Name_List {
     return $string;
 }
 sub DerivedNumericValues ( Str $filename ) {
+    my @property-names = 'Numeric_Value_Numerator', 'Numeric_Value_Denominator';
     my $numerator-seen = pvalue-seen.new;
     my $denominator-seen = pvalue-seen.new;
     for slurp-lines($filename) {
         next if skip-line($_);
         my @parts = .split-trim([';','#']);
-        my $number = @parts[3];
         my $cp = @parts[0];
-        my ($numerator, $denominator);
-        if $number.contains('/') {
-            ($numerator, $denominator) = $number.split('/');
-        }
-        else {
-            $numerator = $number;
-            $denominator = 1;
-        }
+        my ($numerator, $denominator) = @parts[3].split('/');
+        $denominator = $denominator // 1;
         $numerator-seen.saw($numerator);
         $denominator-seen.saw($denominator);
-        my %point = 'Numeric_Value_Numerator' => $numerator.Int,
-            'Numeric_Value_Denominator' => $denominator.Int;
-        apply-to-cp($cp, %point);
+        apply-to-cp2($cp, 'Numeric_Value_Numerator', $numerator.Int);
+        apply-to-cp2($cp, 'Numeric_Value_Denominator', $denominator.Int);
     }
     register-enum-property('Numeric_Value_Denominator', 0, $denominator-seen);
     register-enum-property('Numeric_Value_Numerator', 0, $numerator-seen);
 }
 sub binary-property ( Int $column, Str $filename ) {
     my $props-seen = pvalue-seen.new;
+    my %props-seen;
     my Int $i = 0;
     for slurp-lines($filename) {
         next if skip-line($_);
         my @parts = .split-trim([';','#'], $column + 2);
+        my $property = @parts[$column];
+        %props-seen{$property} = True unless %props-seen{$property};
         $props-seen.saw(@parts[$column]);
         apply-to-cp2(@parts[0], @parts[$column], True);
         last if $less-global and $less-global > $i;
         $i++;
     }
-    register-binary-property($props-seen.bin-seen-values);
+    register-binary-property(%props-seen.keys.sort);
 }
 sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filename ) {
     my $seen-value = pvalue-seen.new;
@@ -333,7 +330,7 @@ sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filenam
 }
 sub register-binary-property (+@names) {
     for @names -> $name {
-        die if $name !~~ Str;
+        die "\@names: " ~ Dump @names ~ "  \$name[$name] doesn't !~~ Str " if $name !~~ Str;
         note "Registering binary property $name";
         if %binary-properties{$name}:exists {
             note "Tried to add $name but binary property already exists";
@@ -366,14 +363,14 @@ multi sub register-enum-property (Str $propname, $negname, pvalue-seen $seen-val
         }
     }
     elsif $type eq 'Int' {
-        for %seen-values.keys.sort({$^a.Int cmp $^b.Int}) {
+        for %seen-values.keys.sort(*.Int) {
             %enum{$_} = $number++;
         }
     }
     else {
         die "Don't know how to register enum property of type '$type'";
     }
-    die "Don't see any 0 value for the enum, neg should be $negname" unless any(%enum.values) == 0;
+    die Dump %enum ~ "Don't see any 0 value for the enum, neg should be $negname" unless any(%enum.values) == 0;
     my Int $max = $number - 1;
     %enumerated-properties{$propname} = %enum;
     say Dump %enumerated-properties if $debug-global;
@@ -604,7 +601,7 @@ sub make-enums {
 
         say $rev-hash if $debug-global;
         if $type eq 'Str' {
-            for $rev-hash.keys.sort(+*) {
+            for $rev-hash.keys.sort(*.Int) {
                 my $pvalue = $rev-hash{$_};
                 my $full-pvalue = get-full-pvalue($prop, $pvalue);
                 @enum-str.push($full-pvalue);
@@ -612,10 +609,10 @@ sub make-enums {
             $enum-str = compose-array compute-type('char *'), $prop, @enum-str;
         }
         elsif $type eq 'Int' {
-            my Int $min = +$rev-hash.values.min(+*);
-            my Int $max = +$rev-hash.values.max(+*);
+            my Int $min = +$rev-hash.values.min(*.Int);
+            my Int $max = +$rev-hash.values.max(*.Int);
             say "Min $min, Max $max";
-            for $rev-hash.keys.sort(+*) {
+            for $rev-hash.keys.sort(*.Int) {
                 @enum-str.push($rev-hash{$_});
             }
             say Dump $rev-hash if $debug-global;
@@ -626,7 +623,7 @@ sub make-enums {
         }
         # Create the #define's for the Property Value's
         @bitfield-h.push("/* $prop */");
-        for $rev-hash.sort(+*.key) {
+        for $rev-hash.sort(*.key.Int) {
             my ($enum-no, $prop-val) = (.key, .value);
             my $prop-val-name = $prop-val.subst('-', 'negative_');
             @bitfield-h.push("#define Uni_PVal_{$prop.uc}_$prop-val-name $enum-no");
@@ -669,7 +666,6 @@ sub make-point-index (:$less) {
 }
 sub make-bitfield-rows {
     note "Making bitfield-rows…";
-    my %code-to-prop{Int};
     my %prop-to-code;
     my Int $i = 0;
     my str $binary-struct-str;
@@ -678,15 +674,13 @@ sub make-bitfield-rows {
     my $bin-prop-nqp := nqp::hash;
     for %binary-properties.keys.sort -> $bin {
         %prop-to-code{$bin} = $i;
-        %code-to-prop{$i} = $bin;
         $i++;
         @bitfield-h.push("    unsigned int $bin :1;");
         nqp::bindkey($bin-prop-nqp, $bin, '1');
     }
     my $enum-prop-nqp := nqp::hash;
-    for %enumerated-properties.keys.sort({%enumerated-properties{$^a}<bitwidth> cmp %enumerated-properties{$^b}<bitwidth>}) -> $property {
+    for %enumerated-properties.keys.sort({%enumerated-properties{$^a}<bitwidth>}) -> $property {
         %prop-to-code{$property} = $i;
-        %code-to-prop{$i} = $property;
         $i++;
         my $bitwidth = %enumerated-properties{$property}<bitwidth>;
         @bitfield-h.push("    unsigned int $property :$bitwidth;");
@@ -715,19 +709,10 @@ sub make-bitfield-rows {
     @bitfield-h.push("typedef struct binary_prop_bitfield binary_prop_bitfield;");
     my $bitfield-rows := nqp::list_s;
     my %bitfield-rows-seen = nqp::hash;
-    my @code-to-prop-keys = %code-to-prop.keys.sort(+*);
-    say @code-to-prop-keys.VAR.name ~ Dump @code-to-prop-keys;
-    my @code-sorted-props = %prop-to-code.sort(+*.value).».key;
-    # double check it is as as it should be
-    for ^@code-sorted-props -> $elem {
-        my $p = %code-to-prop{$elem};
-        say "elem $elem, p $p";
-        die %code-to-prop.VAR.name ~ Dump %code-to-prop if %code-to-prop{$elem} ne @code-sorted-props[$elem];
-        die if %prop-to-code{$p} != $elem;
-    }
+    my @code-sorted-props = %prop-to-code.sort(*.value.Int).».key;
 
     my $t1 = now;
-    for %points.keys.sort(+*) -> $point {
+    for %points.keys.sort(*.Int) -> $point {
         my $bitfield-columns := nqp::list_s;
         my $points-point := nqp::atkey(%points, $point);
         for @code-sorted-props -> $prop {
@@ -776,20 +761,17 @@ sub make-bitfield-rows {
     }
     my $t2 = now;
     say "Finished computing all rows, took {now - $t1}. Now creating the final unduplicated version.";
-    for %bitfield-rows-seen.sort(+*.value).».kv -> ($row-str, $index) {
+    for %bitfield-rows-seen.sort(*.value.Int).».kv -> ($row-str, $index) {
         nqp::push_s($bitfield-rows, '    {' ~ $row-str ~ "\},/* index $index */");
     }
     $binary-struct-str = nqp::join("\n", $bitfield-rows);
-    my @array;
-    my $prefix = get-prefix();
-    push @array, qq:to/END/;
+    say "Took {now - $t2} seconds to join all the seen bitfield rows";
+    return qq:to/END/;
     #include <stdio.h>
-    $prefix binary_prop_bitfield mybitfield[{$bin-index + 1}] = \{
+    {get-prefix()} binary_prop_bitfield mybitfield[{$bin-index + 1}] = \{
     $binary-struct-str
         \};
     END
-    say "Took {now - $t2} seconds to join all the seen bitfield rows";
-    return @array.join("\n");
 }
 sub dump-json ( Bool $dump ) {
     note "Converting data to JSON...";
