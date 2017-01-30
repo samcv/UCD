@@ -652,11 +652,13 @@ sub make-bitfield-rows {
     my str $binary-struct-str;
     # Create the order of the struct
     @bitfield-h.push("struct binary_prop_bitfield  \{");
+    my $bin-prop-nqp := nqp::hash;
     for %binary-properties.keys.sort -> $bin {
         %prop-to-code{$bin} = $i;
         %code-to-prop{$i} = $bin;
         $i++;
         @bitfield-h.push("    unsigned int $bin :1;");
+        nqp::bindkey($bin-prop-nqp, $bin, '1');
     }
     my $enum-prop-nqp := nqp::hash;
     for %enumerated-properties.keys.sort({%enumerated-properties{$^a}<bitwidth> cmp %enumerated-properties{$^b}<bitwidth>}) -> $property {
@@ -693,6 +695,7 @@ sub make-bitfield-rows {
     my @code-to-prop-keys = %code-to-prop.keys.sort(+*);
     say @code-to-prop-keys.VAR.name ~ Dump @code-to-prop-keys;
     my @code-sorted-props = %prop-to-code.sort(+*.value).».key;
+    # double check it is as as it should be
     for ^@code-sorted-props -> $elem {
         my $p = %code-to-prop{$elem};
         say "elem $elem, p $p";
@@ -705,18 +708,19 @@ sub make-bitfield-rows {
         my $bitfield-columns := nqp::list_s;
         for @code-sorted-props -> $prop {
             if %points{$point}{$prop}:exists {
-                if %binary-properties{$prop}:exists {
-                    nqp::push_s($bitfield-columns, nqp::unbox_s(%points{$point}{$prop} ?? '1' !! '0'));
+                if nqp::existskey($bin-prop-nqp, $prop) {
+                    nqp::push_s($bitfield-columns,
+                        nqp::if(%points{$point}{$prop}, '1', '0')
+                    );
                 }
                 elsif nqp::existskey($enum-prop-nqp, $prop) {
-                    my str $enum = nqp::base_I(nqp::decont(%points{$point}{$prop}), 10);
-                    my $enum-prop-nqp_prop := nqp::atkey($enum-prop-nqp, $prop);
+                    my $enum := nqp::base_I(nqp::decont(%points{$point}{$prop}), 10);
                     # If the key exists we need to look up the value
-                    if nqp::existskey($enum-prop-nqp_prop, $enum) {
-                        my $e := nqp::atkey($enum-prop-nqp_prop, $enum);
+                    my $enum-prop-nqp-prop := nqp::atkey($enum-prop-nqp, $prop);
+                    if nqp::existskey($enum-prop-nqp-prop, $enum) {
                         #say $e.WHAT;
                         #say $enum.WHAT;
-                        nqp::push_s($bitfield-columns, $e);
+                        nqp::push_s($bitfield-columns, nqp::atkey($enum-prop-nqp-prop, $enum));
                     }
                     # If it doesn't exist it's an Int property. Eventually we should try and look
                     # up the enum type in the hash
@@ -733,17 +737,17 @@ sub make-bitfield-rows {
                 nqp::push_s($bitfield-columns, '0');
             }
         }
-        my str $bitfield-rows-str = nqp::join('', nqp::list_s('    {', nqp::join(',', $bitfield-columns), '},'));
+        my $bitfield-rows-str := nqp::join(',', $bitfield-columns);
         # If we've already seen an identical row
         nqp::if(nqp::existskey(%bitfield-rows-seen, $bitfield-rows-str), (
-            nqp::bindkey(%point-index, nqp::unbox_s($point), nqp::atkey(%bitfield-rows-seen, $bitfield-rows-str))
+            nqp::bindkey(%point-index, $point, nqp::atkey(%bitfield-rows-seen, $bitfield-rows-str))
         ),
         (
-            my str $bin-index_s = nqp::base_I(++$bin-index, 10);
+            my $bin-index_s := nqp::base_I(++$bin-index, 10);
             # Bind it to the bitfield rows hash
             nqp::bindkey(%bitfield-rows-seen, $bitfield-rows-str, $bin-index_s);
             # Bind the point index so we know where in the bitfield this point is located
-            nqp::bindkey(%point-index, nqp::unbox_s($point), $bin-index_s);
+            nqp::bindkey(%point-index, $point, $bin-index_s);
         )
         );
 
@@ -753,7 +757,7 @@ sub make-bitfield-rows {
     for %bitfield-rows-seen.sort(+*.value).».kv -> ($row-str, $index) {
         nqp::push_s($bitfield-rows, nqp::concat($row-str, "/* index $index */"));
     }
-    $binary-struct-str = nqp::join("\n", $bitfield-rows);
+    $binary-struct-str = '{' ~ nqp::join("\}\n\{", $bitfield-rows) ~ '}';
     my @array;
     my $prefix = get-prefix();
     push @array, qq:to/END/;
