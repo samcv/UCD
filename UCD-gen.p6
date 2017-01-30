@@ -75,6 +75,9 @@ sub PValueAliases (Str $filename, %aliases, %aliases_to?) {
 }
 class pvalue-seen {
     has %.seen-values;
+    method bin-seen-values {
+        %!seen-values.sort.keys;
+    }
     method saw ($saw) {
         %!seen-values{$saw} = True unless %!seen-values{$saw}:exists;
     }
@@ -293,21 +296,17 @@ sub DerivedNumericValues ( Str $filename ) {
     register-enum-property('Numeric_Value_Numerator', 0, $numerator-seen);
 }
 sub binary-property ( Int $column, Str $filename ) {
-    my %props-seen;
+    my $props-seen = pvalue-seen.new;
     my Int $i = 0;
     for slurp-lines($filename) {
         next if skip-line($_);
         my @parts = .split-trim([';','#'], $column + 2);
-        my $property = @parts[$column];
-        %props-seen{$property} = True unless %props-seen{$property};
-        my $range = @parts[0];
-        my %point;
-        %point{$property} = True;
-        apply-to-cp($range, %point);
+        $props-seen.saw(@parts[$column]);
+        apply-to-cp2(@parts[0], @parts[$column], True);
         last if $less-global and $less-global > $i;
         $i++;
     }
-    register-binary-property(%props-seen.keys.sort);
+    register-binary-property($props-seen.bin-seen-values);
 }
 sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filename ) {
     my $seen-value = pvalue-seen.new;
@@ -326,8 +325,9 @@ sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filenam
     }
     my %enum = register-enum-property($propname, $negname, $seen-value);
     for %points-by-range.keys -> $range {
-        %points-by-range{$range}{$propname} = %enum{%points-by-range{$range}{$propname}};
-        apply-to-cp($range, %points-by-range{$range});
+        #%points-by-range{$range}{$propname} = %enum{%points-by-range{$range}{$propname}};
+        apply-to-cp2($range, $propname, %enum{%points-by-range{$range}{$propname}} );
+        #apply-to-cp($range, %points-by-range{$range});
     }
     say "Took {now - $t1} to process $propname enums";
 }
@@ -503,12 +503,34 @@ sub apply-to-cp (Str $range-str, Hash $hashy) {
         }
     }
     # Otherwise there's only one point
-    elsif @items.elems = 1 {
+    elsif @items.elems == 1 {
         apply-to-points(@items[0], $hashy);
     }
     else {
         die "Unknown range '$range-str'";
     }
+}
+sub apply-to-cp2 (Str $range-str, Str $pname, $value) {
+    # If it contains `..` then it is a range
+    my @items = $range-str.split('..').».parse-base(16);
+    if @items.elems == 2 {
+        for Range.new( @items[0], @items[1]) -> $cp {
+            apply-to-points2($cp, $pname, $value);
+        }
+    }
+    # Otherwise there's only one point
+    elsif @items.elems == 1 {
+        apply-to-points2(@items[0], $pname, $value);
+    }
+    else {
+        die "Unknown range '$range-str'";
+    }
+}
+sub apply-to-points2 (Int $cp, Str $pname, $value) {
+    if %points{$cp}{$pname}:exists {
+        say "Pname $pname for cp $cp already exists: " ~ Dump %points{$cp}{$pname};
+    }
+    %points{$cp}{$pname} = $value;
 }
 sub apply-to-points (Int $cp, Hash $hashy) {
     for $hashy.keys -> $key {
