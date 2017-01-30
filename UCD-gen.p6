@@ -311,8 +311,10 @@ sub binary-property ( Int $column, Str $filename ) {
 }
 sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filename ) {
     my $seen-value = pvalue-seen.new;
+    die unless %PropertyValueAliases{$propname}:exists;
     my %points-by-range;
     my Int $i = 0;
+    my $t1 = now;
     for slurp-lines($filename) {
         next if skip-line($_);
         my @parts = .split-trim([';','#'], $column + 2);
@@ -327,6 +329,7 @@ sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filenam
         %points-by-range{$range}{$propname} = %enum{%points-by-range{$range}{$propname}};
         apply-to-cp($range, %points-by-range{$range});
     }
+    say "Took {now - $t1} to process $propname enums";
 }
 sub register-binary-property (+@names) {
     for @names -> $name {
@@ -491,19 +494,17 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
     # For now register it as a string enum, will change when a register-enum-property multi is made
     register-enum-property("Canonical_Combining_Class", 0, $seen-ccc);
 }
-
 sub apply-to-cp (Str $range-str, Hash $hashy) {
-    my $range;
     # If it contains `..` then it is a range
-    if $range-str.match(/ ^ ( <:AHex>+ ) '..' ( <:AHex>+ ) $ /) {
-        $range = Range.new: :16(~$0), :16(~$1);
-        for $range.lazy -> $cp {
+    my @items = $range-str.split('..').».parse-base(16);
+    if @items.elems == 2 {
+        for Range.new( @items[0], @items[1]) -> $cp {
             apply-to-points($cp, $hashy);
         }
     }
     # Otherwise there's only one point
-    elsif $range-str.match(/ ^ (<:AHex>+) $ /) {
-        apply-to-points(:16(~$0), $hashy);
+    elsif @items.elems = 1 {
+        apply-to-points(@items[0], $hashy);
     }
     else {
         die "Unknown range '$range-str'";
