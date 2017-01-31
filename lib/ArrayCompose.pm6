@@ -14,8 +14,17 @@ multi compose-array ( Str:D $type, Str:D $name, Cool:D $elems,
 }
 multi compose-array
     ( Str:D $type, Str:D $name, @body, Bool :$header = False ) is export {
+    say "Composing array [$name] type: $type";
     if $type.contains('char *') {
+        say "Choosing char *";
         return compose-array($type, $name, @body.elems, '"' ~ @body.join('","') ~ '"', :header($header));
+    }
+    elsif $type.contains('char') {
+        say "choosing char";
+        # Use a null char to denote empty items since you can't have an empty
+        # char in C
+        $_ = '\0' if $_ eq '' for @body;
+        return compose-array($type, $name, @body.elems, ｢'｣ ~ @body.join(｢','｣) ~ ｢'｣, :header($header));
     }
     compose-array($type, $name, @body.elems, @body.join(','), :header($header));
 }

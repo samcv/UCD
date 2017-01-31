@@ -72,6 +72,9 @@ multi sub compute-type ( Str $str ) {
     if $str eq 'char *' {
         return $prefix ~ 'char *';
     }
+    elsif $str eq 'char' {
+        return $prefix ~ 'char';
+    }
     else {
         die "Don't know what type '$str' is";
     }
