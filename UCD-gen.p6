@@ -15,6 +15,8 @@ my Str $build-folder = "source";
 my Str $snippets-folder = "snippets";
 # stores lines of bitfield.h
 our @bitfield-h;
+our %enum-staging;
+
 my %points; # Stores all the cp's property values of all types
 my %names = nqp::hash; # Unicode Name hash for generating the name table
 my %binary-properties; # Stores the binary property names
@@ -76,11 +78,37 @@ sub PValueAliases (Str $filename, %aliases, %aliases_to?) {
 }
 class pvalue-seen {
     has %.seen-values;
+    has $.negname;
+    has $.type;
+    has %.enum;
     method bin-seen-keys {
         %!seen-values.sort.keys;
     }
     method saw ($saw) {
         %!seen-values{$saw} = True unless %!seen-values{$saw}:exists;
+    }
+    method build {
+        $!type = $!negname.WHAT.^name;
+        # Start the enum values at 0
+        my $number = 0;
+        # Our false name we got should be number 0, and will be different depending
+        # on the category.
+        if $!type eq 'Str' {
+            %!enum{$!negname} = ($number++).Str;
+            %!seen-values{$!negname}:delete;
+            for %!seen-values.keys.sort {
+                %!enum{$_} = ($number++).Str;
+            }
+        }
+        elsif $!type eq 'Int' {
+            for %!seen-values.keys.sort(*.Int) {
+                %!enum{$_} = ($number++).Str;
+            }
+        }
+        else {
+            die "Don't know how to register enum property of type '{$!negname.WHAT.^name}'";
+        }
+        %!enum;
     }
 }
 sub PNameAliases (Str $filename, %aliases, %aliases_to?) {
@@ -99,9 +127,6 @@ sub PNameAliases (Str $filename, %aliases, %aliases_to?) {
             }
         }
     }
-}
-sub get-property-fullname (Str $name) {
-
 }
 my %point-to-struct;
 my %bitfields;
@@ -137,6 +162,7 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$de
 
     unless $numeric-value-only {
         $name-file = Generate_Name_List();
+        write-file('names.c', $name-file);
     }
     unless $names-only or $numeric-value-only {
         my @enum-data =
@@ -184,8 +210,6 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$de
             write-file('bitfield.c', $bitfield_c);
             write-file('bitfield.h', @bitfield-h.join("\n"));
         }
-        note "Saving names.c…";
-        write-file('names.c', $name-file);
     }
     say "Took {now - INIT now} seconds.";
 }
@@ -271,9 +295,9 @@ sub Generate_Name_List {
     return $string;
 }
 sub DerivedNumericValues ( Str $filename ) {
-    my @property-names = 'Numeric_Value_Numerator', 'Numeric_Value_Denominator';
-    my $numerator-seen = pvalue-seen.new;
-    my $denominator-seen = pvalue-seen.new;
+    constant @property-names = 'Numeric_Value_Numerator', 'Numeric_Value_Denominator';
+    my $numerator-seen = get-pvalue-seen('Numeric_Value_Numerator', 0);
+    my $denominator-seen = get-pvalue-seen('Numeric_Value_Denominator', 0);
     for slurp-lines($filename) {
         next if skip-line($_);
         my @parts = .split-trim([';','#']);
@@ -282,14 +306,13 @@ sub DerivedNumericValues ( Str $filename ) {
         $denominator = $denominator // 1;
         $numerator-seen.saw($numerator);
         $denominator-seen.saw($denominator);
-        apply-to-cp2($cp, 'Numeric_Value_Numerator', $numerator.Int);
-        apply-to-cp2($cp, 'Numeric_Value_Denominator', $denominator.Int);
+        apply-to-cp2($cp, 'Numeric_Value_Numerator', $numerator.Int.Str);
+        apply-to-cp2($cp, 'Numeric_Value_Denominator', $denominator.Int.Str);
     }
     register-enum-property('Numeric_Value_Denominator', 0, $denominator-seen);
     register-enum-property('Numeric_Value_Numerator', 0, $numerator-seen);
 }
 sub binary-property ( Int $column, Str $filename ) {
-    my $props-seen = pvalue-seen.new;
     my %props-seen;
     my Int $i = 0;
     for slurp-lines($filename) {
@@ -297,17 +320,24 @@ sub binary-property ( Int $column, Str $filename ) {
         my @parts = .split-trim([';','#'], $column + 2);
         my $property = @parts[$column];
         %props-seen{$property} = True unless %props-seen{$property};
-        $props-seen.saw(@parts[$column]);
         apply-to-cp2(@parts[0], @parts[$column], True);
         last if $less-global and $less-global > $i;
         $i++;
     }
     register-binary-property(%props-seen.keys.sort);
 }
+sub get-pvalue-seen (Str $property, $negname) {
+    if %enum-staging{$property}:exists {
+        return %enum-staging{$property};
+    }
+    else {
+        %enum-staging{$property} = pvalue-seen.new(negname => $negname);
+        return %enum-staging{$property};
+    }
+}
 sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filename ) {
-    my $seen-value = pvalue-seen.new;
+    my $seen-value = get-pvalue-seen($propname, $negname);
     die unless %PropertyValueAliases{$propname}:exists;
-    my %points-by-range;
     my Int $i = 0;
     my $t1 = now;
     for slurp-lines($filename) {
@@ -316,13 +346,9 @@ sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filenam
         my $range = @parts[0];
         my $prop-val = @parts[$column];
         $seen-value.saw($prop-val);
-        my %point = $propname => $prop-val;
-        %points-by-range{$range} = %point;
+        apply-to-cp2($range, $propname, $prop-val);
     }
     my %enum = register-enum-property($propname, $negname, $seen-value);
-    for %points-by-range.keys -> $range {
-        apply-to-cp2($range, $propname, %enum{ %points-by-range{$range}{$propname} } );
-    }
     say "Took {now - $t1} to process $propname enums";
 }
 sub register-binary-property (+@names) {
@@ -336,9 +362,7 @@ sub register-binary-property (+@names) {
         %all-properties{$name} := %binary-properties{$name};
     }
 }
-sub compute-bitwidth ( Int $max ) {
-    $max.base(2).chars;
-}
+sub compute-bitwidth ( Int $max ) { $max.base(2).chars }
 multi sub register-enum-property (Str $propname, $negname, %seen-values) {
     die "Deprecated register-enum-property called with prop: $propname";
 }
@@ -418,8 +442,8 @@ sub PValueAlias ( Str $property, Str $file ) {
 
 sub UnicodeData ( Str $file, Int $less = 0 ) {
     register-binary-property(<NFD_QC NFC_QC NFKD_QC NFG_QC Any Bidi_Mirrored>);
-    my $seen-ccc = pvalue-seen.new;
-    my ($seen-gc_1, $seen-gc_2) = pvalue-seen.new, pvalue-seen.new;
+    my $seen-ccc = get-pvalue-seen('Canonical_Combining_Class', 0);
+    my ($seen-gc_1, $seen-gc_2) = get-pvalue-seen(@gc[0], ''), get-pvalue-seen(@gc[1], '');
     #3400;<CJK Ideograph Extension A, First>;Lo;0;L;;;;;N;;;;;
     our $first-point-cp;
     my %First-point; # %First-point gets assigned a value if it matches as above
@@ -443,7 +467,7 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
         }
         if $ccclass {
             $seen-ccc.saw($ccclass);
-            %hash<Canonical_Combining_Class> = $ccclass.Int;
+            %hash<Canonical_Combining_Class> = $ccclass;
         }
         %hash<Unicode_1_Name>            =? $u1name;
         %hash<Bidi_Class>                =? $bidiclass;
@@ -502,8 +526,8 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
     }
     # For now register it as a string enum, will change when a register-enum-property multi is made
     register-enum-property("Canonical_Combining_Class", 0, $seen-ccc);
-    #register-enum-property(@gc[0], '', $seen-gc_1);
-    #register-enum-property(@gc[1], '', $seen-gc_2);
+    register-enum-property(@gc[0], '', $seen-gc_1);
+    register-enum-property(@gc[1], '', $seen-gc_2);
 
 }
 sub apply-to-cp (Str $range-str, Hash $hashy) {
@@ -571,7 +595,7 @@ sub apply-to-points (Int $cp, Hash $hashy) {
         }
     }
 }
-state @non-official-properties =
+constant @non-official-properties =
     'Numeric_Value_Numerator', 'Numeric_Value_Denominator',
     'General_Category_1', 'General_Category_2';
 sub get-full-pvalue (Str $prop is copy, Str $pvalue) {
@@ -581,7 +605,8 @@ sub get-full-pvalue (Str $prop is copy, Str $pvalue) {
     }
     else {
         warn "Could not find “$pvalue” in property “$prop” in " ~
-             '%PropertyValueAliases_to hash';
+             '%PropertyValueAliases_to hash'
+             if $prop ne @non-official-properties.any;
         if %PropertyValueAliases_to{$prop}:exists {
             note "\%PropertyValueAliases_to\{$prop\}: " ~
                 Dump %PropertyValueAliases_to{$prop};
@@ -671,7 +696,7 @@ sub make-point-index (:$less) {
     );
     my $string = nqp::join(",", $mapping);
     my int $chars = nqp::chars($string);
-    say "Adding nowlines every 50-60 chars";
+    say "Adding nowlines every 70-79 chars";
     # XXX can use .split-into-lines here
     $string ~~ s:g/(.**70..79',')/$0\n/;
     say now - $t1 ~ "Took this long to concat points";
@@ -698,15 +723,23 @@ sub make-bitfield-rows {
         my $bitwidth = %enumerated-properties{$property}<bitwidth>;
         @bitfield-h.push("    unsigned int $property :$bitwidth;");
         my $this-prop := nqp::hash;
-        for %enumerated-properties{$property}.kv -> $key, $value {
-            next if $key eq any('name', 'bitwidth');
+        die "$property not found in enum-staging" if %enum-staging{$property}:!exists;
+        my $built = %enum-staging{$property}.build;
+        for $built.kv -> $key, $value {
+            next if $key eq any('name', 'bitwidth', 'type');
             my $value_s;
+            my $type = $value.WHAT.^name;
+            die if $type ne 'Str';
+            say "Value $value type $type";
             $value_s = nqp::istype($value, Int)
                 ?? nqp::base_I(nqp::decont($value), 10)
                 !! $value;
             nqp::bindkey($this-prop, $key, $value_s);
         }
+        #say dump $built;
+        #say dump $this-prop;
         nqp::bindkey($enum-prop-nqp, $property, $this-prop);
+        #nqp::bindkey($enum-prop-nqp, $property,  $built);
     }
     @bitfield-h.push("\};");
     @bitfield-h.push("typedef struct binary_prop_bitfield binary_prop_bitfield;");
@@ -717,13 +750,14 @@ sub make-bitfield-rows {
         my $bitfield-columns := nqp::list_s;
         my $points-point := nqp::atkey(%points, $point);
         for @code-sorted-props -> $prop {
+            say "prop $prop";
             if $points-point{$prop}:exists {
                 nqp::if( nqp::existskey($bin-prop-nqp, $prop), (
                     nqp::push_s($bitfield-columns,
                         nqp::if($points-point{$prop}, '1', '0')
                     );
                 ), (nqp::if(nqp::existskey($enum-prop-nqp, $prop), (
-                        my $enum := nqp::base_I(nqp::decont($points-point{$prop}), 10);
+                        my $enum := $points-point{$prop};
                         # If the key exists we need to look up the value
                         my $enum-prop-nqp-prop := nqp::atkey($enum-prop-nqp, $prop);
                         # If it doesn't exist we already have the property code.
@@ -785,3 +819,4 @@ sub dump-json ( Bool $dump ) {
         write-file(.VAR.name ~ '.json', to-json($_));
     }
 }
+sub dump (\a) is raw { my $s; $s ~= a.VAR.name ~ ":\t" ~ Dump a; $s }
