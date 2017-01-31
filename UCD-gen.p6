@@ -1,6 +1,7 @@
 #!/usr/bin/env perl6
-use JSON::Fast;
 use MONKEY-TYPING;
+use experimental :macros;
+use JSON::Fast;
 use nqp;
 use Data::Dump;
 use lib 'lib';
@@ -10,12 +11,14 @@ use Set-Range;
 use seenwords;
 use EncodeBase40;
 use Operators;
+use packer;
 INIT  say "\nStarting…";
 my Str $build-folder = "source";
 my Str $snippets-folder = "snippets";
 # stores lines of bitfield.h
 our @bitfield-h;
 our %enum-staging;
+macro dump($x) { quasi { say VAR({{{$x}}}).name, ": ", Dump {{{$x}}} } };
 
 my %points; # Stores all the cp's property values of all types
 my %names = nqp::hash; # Unicode Name hash for generating the name table
@@ -369,7 +372,7 @@ sub register-binary-property (+@names) {
         %all-properties{$name} := %binary-properties{$name};
     }
 }
-sub compute-bitwidth ( Int $max ) { $max.base(2).chars }
+sub compute-bitwidth ( Int $max ) { ($max - 1).base(2).chars }
 multi sub register-enum-property (Str $propname, $negname, %seen-values) {
     die "Deprecated register-enum-property called with prop: $propname";
 }
@@ -724,10 +727,40 @@ sub make-bitfield-rows {
         nqp::bindkey($bin-prop-nqp, $bin, '1');
     }
     my $enum-prop-nqp := nqp::hash;
-    for %enumerated-properties.keys.sort({%enumerated-properties{$^a}<bitwidth>}) -> $property {
+    my @bitwidth-sorted-enum = %enum-staging.sort(*.value.bitwidth.Int);
+    my %results;
+    my $i = 0;
+    for @bitwidth-sorted-enum.permutations -> @perm {
+        my @nums;
+        for @perm {
+            @nums.push(.value.bitwidth);
+        }
+        %results{$i}<bytes> = packer(@nums);
+        %results{$i++}<perm> = @perm;
+    }
+    my @size-sorted-enum = %results.keys.sort({
+        my $c = %results{$^a}<bytes> cmp %results{$^b}<bytes>;
+        $c ?? $c !! $^a.Int cmp $^b.Int;
+    });
+    my $best-bytes = %results{@size-sorted-enum[0]}<bytes>;
+    my $worst-bytes = %results{@size-sorted-enum[*-1]}<bytes>;
+    my $best-sorted-enum = %results{@size-sorted-enum[0]}<perm>;
+    my $worst-sorted-enum = %results{@size-sorted-enum[*-1]}<perm>;
+    say $best-sorted-enum.WHAT, "WHAT";
+    #say "Worst order: ", $worst-sorted-enum.perl;
+    say "Best sorted has ", $best-sorted-enum.elems, " elements and is a ",
+        $best-sorted-enum.WHAT, " type.";
+    for ^$best-sorted-enum.elems -> $index {
+        say "Index ", $index, " elems: ", $best-sorted-enum[$index].elems,
+            " is a type: ", $best-sorted-enum[$index].WHAT;
+        say $best-sorted-enum[$index];
+    }
+    say "Saved {$worst-bytes - $best-bytes} per bitfield row by packing";
+    for ^$best-sorted-enum.elems -> $index {
+        my ($property, $obj) = ($best-sorted-enum[$index].key, $best-sorted-enum[$index].value);
         say "enum prop $property";
         @code-sorted-props.push($property);
-        my $bitwidth = %enumerated-properties{$property}<bitwidth>;
+        my $bitwidth = $obj.bitwidth;
         @bitfield-h.push("    unsigned int $property :$bitwidth;");
         my $this-prop := nqp::hash;
         die "$property not found in enum-staging" if %enum-staging{$property}:!exists;
@@ -735,18 +768,12 @@ sub make-bitfield-rows {
         for $built.kv -> $key, $value {
             next if $key eq any('name', 'bitwidth', 'type');
             my $value_s;
-            my $type = $value.WHAT.^name;
+            my $type = $value.^name;
             die if $type ne 'Str';
-            say "Value $value type $type";
-            $value_s = nqp::istype($value, Int)
-                ?? nqp::base_I(nqp::decont($value), 10)
-                !! $value;
+            $value_s = $value;
             nqp::bindkey($this-prop, $key, $value_s);
         }
-        #say dump $built;
-        #say dump $this-prop;
         nqp::bindkey($enum-prop-nqp, $property, $this-prop);
-        #nqp::bindkey($enum-prop-nqp, $property,  $built);
     }
     @bitfield-h.push("\};");
     @bitfield-h.push("typedef struct binary_prop_bitfield binary_prop_bitfield;");
@@ -757,7 +784,6 @@ sub make-bitfield-rows {
         my $bitfield-columns := nqp::list_s;
         my $points-point := nqp::atkey(%points, $point);
         for @code-sorted-props -> $prop {
-            say "prop $prop";
             if $points-point{$prop}:exists {
                 nqp::if( nqp::existskey($bin-prop-nqp, $prop), (
                     nqp::push_s($bitfield-columns,
@@ -826,4 +852,3 @@ sub dump-json ( Bool $dump ) {
         write-file(.VAR.name ~ '.json', to-json($_));
     }
 }
-sub dump (\a) is raw { my $s; $s ~= a.VAR.name ~ ":\t" ~ Dump a; $s }
