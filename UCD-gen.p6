@@ -81,6 +81,11 @@ class pvalue-seen {
     has $.negname;
     has $.type;
     has %.enum;
+    has $!bitwidth;
+    method bitwidth {
+        $!bitwidth = compute-bitwidth(%!seen-values.elems);
+        $!bitwidth;
+    }
     method bin-seen-keys {
         %!seen-values.sort.keys;
     }
@@ -88,25 +93,27 @@ class pvalue-seen {
         %!seen-values{$saw} = True unless %!seen-values{$saw}:exists;
     }
     method build {
-        $!type = $!negname.WHAT.^name;
-        # Start the enum values at 0
-        my $number = 0;
-        # Our false name we got should be number 0, and will be different depending
-        # on the category.
-        if $!type eq 'Str' {
-            %!enum{$!negname} = ($number++).Str;
-            %!seen-values{$!negname}:delete;
-            for %!seen-values.keys.sort {
-                %!enum{$_} = ($number++).Str;
+        if %!enum.elems != %!seen-values.elems {
+            $!type = $!negname.WHAT.^name;
+            # Start the enum values at 0
+            my $number = 0;
+            # Our false name we got should be number 0, and will be different depending
+            # on the category.
+            if $!type eq 'Str' {
+                %!enum{$!negname} = ($number++).Str;
+                %!seen-values{$!negname}:delete;
+                for %!seen-values.keys.sort {
+                    %!enum{$_} = ($number++).Str;
+                }
             }
-        }
-        elsif $!type eq 'Int' {
-            for %!seen-values.keys.sort(*.Int) {
-                %!enum{$_} = ($number++).Str;
+            elsif $!type eq 'Int' {
+                for %!seen-values.keys.sort(*.Int) {
+                    %!enum{$_} = ($number++).Str;
+                }
             }
-        }
-        else {
-            die "Don't know how to register enum property of type '{$!negname.WHAT.^name}'";
+            else {
+                die "Don't know how to register enum property of type '{$!negname.WHAT.^name}'";
+            }
         }
         %!enum;
     }
