@@ -18,6 +18,11 @@ my Str $snippets-folder = "snippets";
 # stores lines of bitfield.h
 our @bitfield-h;
 our %enum-staging;
+our @timers;
+sub timer {
+    push @timers, now;
+    say "Took {@timers[*-1] - @timers[*-2]} seconds" if @timers[*-2].defined;
+}
 macro dump($x) { quasi { say VAR({{{$x}}}).name, ": ", Dump {{{$x}}} } };
 
 my %points; # Stores all the cp's property values of all types
@@ -165,7 +170,9 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$de
     start-routine();
     PNameAliases("PropertyAliases", %PropertyNameAliases, %PropertyNameAliases_to);
     PValueAliases("PropertyValueAliases", %PropertyValueAliases, %PropertyValueAliases_to);
+    timer;
     UnicodeData("UnicodeData", $less);
+    timer;
     my $name-file;
     DerivedNumericValues('extracted/DerivedNumericValues');
     enumerated-property(1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth') unless $less < 200;
@@ -453,7 +460,7 @@ sub PValueAlias ( Str $property, Str $file ) {
 sub UnicodeData ( Str $file, Int $less = 0 ) {
     register-binary-property(<NFD_QC NFC_QC NFKD_QC NFG_QC Any Bidi_Mirrored>);
     my $seen-ccc = get-pvalue-seen('Canonical_Combining_Class', 0);
-    my ($seen-gc_1, $seen-gc_2) = get-pvalue-seen(@gc[0], ''), get-pvalue-seen(@gc[1], '');
+    my %seen-gc;
     #3400;<CJK Ideograph Extension A, First>;Lo;0;L;;;;;N;;;;;
     our $first-point-cp;
     my %First-point; # %First-point gets assigned a value if it matches as above
@@ -468,12 +475,16 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
         next if $less != 0 and $cp > $less;
         my %hash;
         if $gencat {
-            %hash<General_Category> = $gencat;
-            my @gencat = $gencat.substr(0, 1), $gencat.substr(1, 1);
-            %hash{@gc[0]} = @gencat[0];
-            %hash{@gc[1]} = @gencat[1];
-            $seen-gc_1.saw: @gencat[0];
-            $seen-gc_2.saw: @gencat[1];
+            if %seen-gc{$gencat}:exists {
+                %hash{@gc[0]} = %seen-gc{$gencat}{@gc[0]};
+                %hash{@gc[1]} = %seen-gc{$gencat}{@gc[1]};
+            }
+            else {
+                %hash{@gc[0]} = $gencat.substr(0, 1);
+                %hash{@gc[1]} = $gencat.substr(1, 1);
+                %seen-gc{$gencat}{@gc[0]} = %hash{@gc[0]};
+                %seen-gc{$gencat}{@gc[1]} = %hash{@gc[1]};
+            }
         }
         if $ccclass {
             $seen-ccc.saw($ccclass);
@@ -536,9 +547,21 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
     }
     # For now register it as a string enum, will change when a register-enum-property multi is made
     register-enum-property("Canonical_Combining_Class", 0, $seen-ccc);
-    register-enum-property(@gc[0], '', $seen-gc_1);
-    register-enum-property(@gc[1], '', $seen-gc_2);
-
+    my $gc_0-seen = get-pvalue-seen(@gc[0], '');
+    my $gc_1-seen = get-pvalue-seen(@gc[1], '');
+    for %seen-gc.keys {
+        my @letters = .comb;
+        $gc_0-seen.saw(@letters[0]);
+        $gc_1-seen.saw(@letters[1]);
+    }
+    register-enum-property(@gc[0], '', $gc_0-seen);
+    register-enum-property(@gc[1], '', $gc_1-seen);
+}
+sub set-pvalue-seen (Str:D $property, $negname, %hash) {
+    my $pvalue-seen = get-pvalue-seen($property, $negname);
+    for %hash.keys {
+        $pvalue-seen.saw($_);
+    }
 }
 sub apply-to-cp (Str $range-str, Hash $hashy) {
     # If it contains `..` then it is a range
