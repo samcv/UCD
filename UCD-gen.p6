@@ -23,7 +23,7 @@ sub timer {
     push @timers, now;
     say "Took {@timers[*-1] - @timers[*-2]} seconds" if @timers[*-2].defined;
 }
-macro dump($x) { quasi { say VAR({{{$x}}}).name, ": ", Dump {{{$x}}} } };
+macro dump($x) { quasi { say {{{$x}}}.VAR.name, ": ", Dump {{{$x}}} } };
 my int $collation-level = nqp::unbox_i(7);
 sub infix:<unicmp>(Str:D \a, Str:D \b) returns Order:D {
     ORDER(
@@ -36,9 +36,6 @@ my %binary-properties; # Stores the binary property names
 # Stores enum prop names and also the property
 # codes which are just internal numbers to represent it in the C datastructure
 my %enumerated-properties;
-# Stores all of the properties. The keys of %binary-properties and %enum-properties
-# get assigned to keys of this hash
-my %all-properties;
 # Stores the decomposition data for NFD
 my %decomp_spec;
 # Stores PropertyValueAliases from PropertyValueAliases.txt
@@ -182,6 +179,7 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$de
     timer;
     UnicodeData("UnicodeData", $less);
     timer;
+    binary-property(1, "DerivedNormalizationProps");
     my $name-file;
     DerivedNumericValues('extracted/DerivedNumericValues');
     enumerated-property(1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth') unless $less < 200;
@@ -191,7 +189,7 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$de
         write-file('names.c', $name-file);
     }
     unless $names-only or $numeric-value-only {
-        my @enum-data =
+        constant @enum-data =
             (1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType'),
             (1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
         for @enum-data {
@@ -335,20 +333,15 @@ sub DerivedNumericValues ( Str $filename ) {
         apply-to-cp2($cp, 'Numeric_Value_Numerator', $numerator.Int.Str);
         apply-to-cp2($cp, 'Numeric_Value_Denominator', $denominator.Int.Str);
     }
-    register-enum-property('Numeric_Value_Denominator', 0, $denominator-seen);
-    register-enum-property('Numeric_Value_Numerator', 0, $numerator-seen);
 }
 sub binary-property ( Int $column, Str $filename ) {
     my %props-seen;
-    my Int $i = 0;
     for slurp-lines($filename) {
         next if skip-line($_);
         my @parts = .split-trim([';','#'], $column + 2);
         my $property = @parts[$column];
         %props-seen{$property} = True unless %props-seen{$property};
         apply-to-cp2(@parts[0], @parts[$column], True);
-        last if $less-global and $less-global > $i;
-        $i++;
     }
     register-binary-property(%props-seen.keys.sort);
 }
@@ -374,7 +367,6 @@ sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filenam
         $seen-value.saw($prop-val);
         apply-to-cp2($range, $propname, $prop-val);
     }
-    my %enum = register-enum-property($propname, $negname, $seen-value);
     say "Took {now - $t1} to process $propname enums";
 }
 sub register-binary-property (+@names) {
@@ -385,55 +377,9 @@ sub register-binary-property (+@names) {
             note "Tried to add $name but binary property already exists";
         }
         %binary-properties{$name} = name => $name, bitwidth => 1;
-        %all-properties{$name} := %binary-properties{$name};
     }
 }
 sub compute-bitwidth ( Int $max ) { ($max - 1).base(2).chars }
-multi sub register-enum-property (Str $propname, $negname, %seen-values) {
-    die "Deprecated register-enum-property called with prop: $propname";
-}
-multi sub register-enum-property (Str $propname, $negname, @values) {
-    my $a = pvalue-seen;
-    for @values {
-        $a.saw($_);
-    }
-    register-enum-property($propname, $negname, $a);
-}
-# Eventually we will make a multi that can take ints
-multi sub register-enum-property (Str $propname, $negname, pvalue-seen $seen-values) {
-    my %enum;
-    my %seen-values = $seen-values.seen-values;
-    my $type = $negname.WHAT.^name;
-    note "Registering type $type enum property $propname";
-    say Dump %seen-values if $debug-global;
-    # Start the enum values at 0
-    my Int $number = 0;
-    # Our false name we got should be number 0, and will be different depending
-    # on the category.
-    if $type eq 'Str' {
-        %enum{$negname} = $number++;
-        %seen-values{$negname}:delete;
-        for %seen-values.keys.sort {
-            %enum{$_} = $number++;
-        }
-    }
-    elsif $type eq 'Int' {
-        for %seen-values.keys.sort(*.Int) {
-            %enum{$_} = $number++;
-        }
-    }
-    else {
-        die "Don't know how to register enum property of type '$type'";
-    }
-    my Int $max = $number - 1;
-    %enumerated-properties{$propname} = %enum;
-    say Dump %enumerated-properties if $debug-global;
-    %enumerated-properties{$propname}<name> = $propname;
-    %enumerated-properties{$propname}<bitwidth> = compute-bitwidth($max);
-    %enumerated-properties{$propname}<type> = $type;
-    %all-properties{$propname} := %enumerated-properties{$propname};
-    return %enum;
-}
 sub tweak_nfg_qc {
     note "Tweaking NFG_QC…";
     # See http://www.unicode.org/reports/tr29/tr29-27.html#Grapheme_Cluster_Boundary_Rules
@@ -466,7 +412,8 @@ sub PValueAlias ( Str $property, Str $file ) {
 }
 
 sub UnicodeData ( Str $file, Int $less = 0 ) {
-    register-binary-property(<NFD_QC NFC_QC NFKD_QC NFG_QC Any Bidi_Mirrored>);
+    #register-binary-property(<NFD_QC NFC_QC NFKD_QC NFG_QC Any Bidi_Mirrored>);
+    register-binary-property(<Any Bidi_Mirrored>);
     my $seen-ccc = get-pvalue-seen('Canonical_Combining_Class', 0);
     my %seen-ccc;
     my %seen-gc;
@@ -476,11 +423,13 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
     # and so is the first in a range inside UnicodeData.txt
     for slurp-lines $file {
         next if skip-line($_);
-        my @parts = .split(';');
+        my @parts = nqp::split(';', $_);
         my ($code-str, $name, $gencat, $ccclass, $bidiclass, $decmpspec,
             $num1, $num2, $num3, $bidimirrored, $u1name, $isocomment,
             $suc, $slc, $stc) = @parts;
-        my $cp = :16($code-str);
+        #say @parts.perl;
+        #exit;
+        my $cp = nqp::atpos(nqp::radix(16, $code-str, 0, 0), 0);
         next if $less != 0 and $cp > $less;
         my %hash;
         if $gencat {
@@ -496,33 +445,34 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
             }
         }
         if $ccclass {
-            %seen-ccc{$ccclass} = True;
+            %seen-ccc{$ccclass} = True unless %seen-ccc{$ccclass}:exists;
             %hash<Canonical_Combining_Class> = $ccclass;
         }
         %hash<Unicode_1_Name>            =? $u1name;
         %hash<Bidi_Class>                =? $bidiclass;
-        %hash<suc>     = :16($suc) if ¿$suc;
-        %hash<slc>     = :16($slc) if ¿$slc;
-        %hash<stc>     = :16($stc) if ¿$stc;
+        %hash<suc>     =  nqp::atpos(nqp::radix(16, $suc, 0, 0), 0) if $suc ne '';
+        %hash<slc>     = nqp::atpos(nqp::radix(16, $slc, 0, 0), 0) if $slc ne '';
+        %hash<stc>     = nqp::atpos(nqp::radix(16, $stc, 0, 0), 0) if $stc ne '';
+        #`( For now these are flipped instead of setting this here
         %hash<NFD_QC>  = True;
         %hash<NFC_QC>  = True;
         %hash<NFKD_QC> = True;
         %hash<NFG_QC>  = True;
+        )
         %hash<Any>     = True;
         %hash<Bidi_Mirrored> = True if $bidimirrored eq 'Y';
 
         if $decmpspec {
-            my @dec = $decmpspec.split(' ');
-            if @dec[0].match(/'<'\w+'>'/) {
+            my @dec = nqp::split(' ', $decmpspec);
+            if @dec[0].starts-with('<') {
                 %decomp_spec{$cp}<type> = @dec.shift;
             }
             else {
                 %decomp_spec{$cp}<type> = 'Canonical';
             }
-            %decomp_spec{$cp}<mapping> = @dec.».parse-base(16);
+            push %decomp_spec{$cp}<mapping>, nqp::atpos(nqp::radix(16, $_, 0, 0), 0)[0] for @dec;
         }
         # We may not need to set the name in the hash in case we only rely on %names;
-        die if !$name;
         if $name.starts-with('<') {
             if $name.ends-with(', Last>') {
                 $name ~~ s/', Last>'$/>/;
@@ -554,8 +504,6 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
         %hash<name>                      =? $name;
         apply-to-cp($code-str, %hash);
     }
-    # For now register it as a string enum, will change when a register-enum-property multi is made
-    register-enum-property("Canonical_Combining_Class", 0, get-pvalue-seen("Canonical_Combining_Class", 0));
     my $gc_0-seen = get-pvalue-seen(@gc[0], '');
     my $gc_1-seen = get-pvalue-seen(@gc[1], '');
     for %seen-gc.keys {
@@ -564,8 +512,6 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
         $gc_1-seen.saw(@letters[1]);
     }
     set-pvalue-seen("Canonical_Combining_Class", 0, %seen-ccc);
-    register-enum-property(@gc[0], '', $gc_0-seen);
-    register-enum-property(@gc[1], '', $gc_1-seen);
 }
 sub set-pvalue-seen (Str:D $property, $negname, %hash) {
     my $pvalue-seen = get-pvalue-seen($property, $negname);
@@ -671,17 +617,13 @@ sub get-full-propname (Str $prop) returns Str {
 sub make-enums {
     note "Making enums…";
     my @enums;
-    say Dump %enumerated-properties if $debug-global;
     for %enum-staging.keys.sort({$^a unicmp $^b}) -> $prop {
         my $obj = %enum-staging{$prop};
         my $full-prop-name = get-full-propname($prop);
         say "make-enums prop[$prop] fullname [$full-prop-name]";
         die if $prop ne $full-prop-name;
         my $type = $obj.type;
-        say dump $type if $prop eq "Canonical_Combining_Class";
-        say dump %enum-staging{$prop} if $prop eq "Canonical_Combining_Class";
         my %enum = $obj.build;
-        say dump %enum if $prop eq "Canonical_Combining_Class";
         my @enum-str;
         my $c-type;
         if $type eq 'Str' {
@@ -690,18 +632,15 @@ sub make-enums {
         elsif $type eq 'Int' {
             my $int-keys = %enum.keys.».Int;
             $c-type = compute-type($int-keys.max, $int-keys.min);
-            say "Min, Max: ", $int-keys.min, ' ', $int-keys.max;
+            say "Min, Max: ", $int-keys.min, ' ', $int-keys.max if $debug-global;
         }
         else {
             die "Don't know how to make an enum of type '$type'";
         }
-        say dump $c-type if $prop eq "Canonical_Combining_Class";
         for %enum.sort(*.value.Int) {
             my $pvalue = $type eq 'Int' ?? .key !! get-full-pvalue($prop, .key);
-            say dump $pvalue if $prop eq "Canonical_Combining_Class";
             @enum-str.push($pvalue);
         }
-        say dump @enum-str if $prop eq "Canonical_Combining_Class";
         # Create the #define's for the Property Value's
         @bitfield-h.push("/* $prop */");
         for %enum.sort(*.value.Int) {
@@ -755,14 +694,10 @@ sub make-bitfield-rows {
     my @list-for-packing;
 
     for %binary-properties.keys.sort -> $bin {
-        say "bin $bin";
-        #@code-sorted-props.push($bin);
-        #@bitfield-h.push("    unsigned int $bin :1;");
         @list-for-packing.push($bin => 1);
     }
     my $enum-prop-nqp := nqp::hash;
     for %enum-staging.sort({ $^a.key unicmp $^b.key } ) {
-        #say "key ", .key, " value ", .value.bitwidth;
         @list-for-packing.push(.key => .value.bitwidth);
     }
     my @packed-enums = compute-packing(@list-for-packing);
@@ -772,8 +707,6 @@ sub make-bitfield-rows {
         my $bitwidth;
         if %enum-staging{$property}:exists {
             $bitwidth = %enum-staging{$property}.bitwidth;
-
-            say "enum prop $property";
             my $this-prop := nqp::hash;
             my $built = %enum-staging{$property}.build;
             for $built.kv -> $key, $value {
@@ -868,7 +801,7 @@ sub dump-json ( Bool $dump ) {
         write-file(%points.VAR.name ~ '.json',  to-json(%points));
         write-file(%decomp_spec.VAR.name ~ '.json',  to-json(%decomp_spec));
     }
-    for %enumerated-properties, %binary-properties, %PropertyValueAliases,
+    for %binary-properties, %PropertyValueAliases,
        %PropertyNameAliases, %PropertyNameAliases_to, %PropertyValueAliases_to {
         write-file(.VAR.name ~ '.json', to-json($_));
     }
