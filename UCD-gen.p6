@@ -24,7 +24,12 @@ sub timer {
     say "Took {@timers[*-1] - @timers[*-2]} seconds" if @timers[*-2].defined;
 }
 macro dump($x) { quasi { say VAR({{{$x}}}).name, ": ", Dump {{{$x}}} } };
-
+my int $collation-level = nqp::unbox_i(7);
+sub infix:<unicmp>(Str:D \a, Str:D \b) returns Order:D {
+    ORDER(
+        nqp::unicmp_s(
+            nqp::unbox_s(a), nqp::unbox_s(b), $collation-level,0,0,0))
+}
 my %points; # Stores all the cp's property values of all types
 my %names = nqp::hash; # Unicode Name hash for generating the name table
 my %binary-properties; # Stores the binary property names
@@ -87,9 +92,13 @@ sub PValueAliases (Str $filename, %aliases, %aliases_to?) {
 class pvalue-seen {
     has %.seen-values;
     has $.negname;
-    has $.type;
+    has $!type;
     has %.enum;
     has $!bitwidth;
+    method type {
+        $!type = $!negname.WHAT.^name;
+        $!type;
+    }
     method bitwidth {
         $!bitwidth = compute-bitwidth(%!seen-values.elems);
         $!bitwidth;
@@ -416,7 +425,6 @@ multi sub register-enum-property (Str $propname, $negname, pvalue-seen $seen-val
     else {
         die "Don't know how to register enum property of type '$type'";
     }
-    die Dump %enum ~ "Don't see any 0 value for the enum, neg should be $negname" unless any(%enum.values) == 0;
     my Int $max = $number - 1;
     %enumerated-properties{$propname} = %enum;
     say Dump %enumerated-properties if $debug-global;
@@ -460,6 +468,7 @@ sub PValueAlias ( Str $property, Str $file ) {
 sub UnicodeData ( Str $file, Int $less = 0 ) {
     register-binary-property(<NFD_QC NFC_QC NFKD_QC NFG_QC Any Bidi_Mirrored>);
     my $seen-ccc = get-pvalue-seen('Canonical_Combining_Class', 0);
+    my %seen-ccc;
     my %seen-gc;
     #3400;<CJK Ideograph Extension A, First>;Lo;0;L;;;;;N;;;;;
     our $first-point-cp;
@@ -487,7 +496,7 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
             }
         }
         if $ccclass {
-            $seen-ccc.saw($ccclass);
+            %seen-ccc{$ccclass} = True;
             %hash<Canonical_Combining_Class> = $ccclass;
         }
         %hash<Unicode_1_Name>            =? $u1name;
@@ -546,7 +555,7 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
         apply-to-cp($code-str, %hash);
     }
     # For now register it as a string enum, will change when a register-enum-property multi is made
-    register-enum-property("Canonical_Combining_Class", 0, $seen-ccc);
+    register-enum-property("Canonical_Combining_Class", 0, get-pvalue-seen("Canonical_Combining_Class", 0));
     my $gc_0-seen = get-pvalue-seen(@gc[0], '');
     my $gc_1-seen = get-pvalue-seen(@gc[1], '');
     for %seen-gc.keys {
@@ -554,6 +563,7 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
         $gc_0-seen.saw(@letters[0]);
         $gc_1-seen.saw(@letters[1]);
     }
+    set-pvalue-seen("Canonical_Combining_Class", 0, %seen-ccc);
     register-enum-property(@gc[0], '', $gc_0-seen);
     register-enum-property(@gc[1], '', $gc_1-seen);
 }
@@ -662,45 +672,44 @@ sub make-enums {
     note "Making enums…";
     my @enums;
     say Dump %enumerated-properties if $debug-global;
-    for %enumerated-properties.keys.sort -> $prop {
+    for %enum-staging.keys.sort({$^a unicmp $^b}) -> $prop {
+        my $obj = %enum-staging{$prop};
         my $full-prop-name = get-full-propname($prop);
         say "make-enums prop[$prop] fullname [$full-prop-name]";
-        my str $enum-str;
+        die if $prop ne $full-prop-name;
+        my $type = $obj.type;
+        say dump $type if $prop eq "Canonical_Combining_Class";
+        say dump %enum-staging{$prop} if $prop eq "Canonical_Combining_Class";
+        my %enum = $obj.build;
+        say dump %enum if $prop eq "Canonical_Combining_Class";
         my @enum-str;
-        my $type = %enumerated-properties{$prop}<type>;
-        my $rev-hash = reverse-hash-int-only(%enumerated-properties{$prop});
-
-        say $rev-hash if $debug-global;
+        my $c-type;
         if $type eq 'Str' {
-            my $type = $rev-hash.values.all.chars <= 1 ?? 'char' !! 'char *';
-            for $rev-hash.keys.sort(*.Int) {
-                my $pvalue = $rev-hash{$_};
-                my $full-pvalue = get-full-pvalue($prop, $pvalue);
-                @enum-str.push($full-pvalue);
-            }
-            $enum-str = compose-array compute-type($type), $prop, @enum-str;
+            $c-type = %enum.keys.all.chars <= 1 ?? 'char' !! 'char *';
         }
         elsif $type eq 'Int' {
-            my Int $min = +$rev-hash.values.min(*.Int);
-            my Int $max = +$rev-hash.values.max(*.Int);
-            say "Min $min, Max $max";
-            for $rev-hash.keys.sort(*.Int) {
-                @enum-str.push($rev-hash{$_});
-            }
-            say Dump $rev-hash if $debug-global;
-            $enum-str = compose-array compute-type($max, $min), $prop, @enum-str;
+            my $int-keys = %enum.keys.».Int;
+            $c-type = compute-type($int-keys.max, $int-keys.min);
+            say "Min, Max: ", $int-keys.min, ' ', $int-keys.max;
         }
         else {
             die "Don't know how to make an enum of type '$type'";
         }
+        say dump $c-type if $prop eq "Canonical_Combining_Class";
+        for %enum.sort(*.value.Int) {
+            my $pvalue = $type eq 'Int' ?? .key !! get-full-pvalue($prop, .key);
+            say dump $pvalue if $prop eq "Canonical_Combining_Class";
+            @enum-str.push($pvalue);
+        }
+        say dump @enum-str if $prop eq "Canonical_Combining_Class";
         # Create the #define's for the Property Value's
         @bitfield-h.push("/* $prop */");
-        for $rev-hash.sort(*.key.Int) {
-            my ($enum-no, $prop-val) = (.key, .value);
+        for %enum.sort(*.value.Int) {
+            my ($enum-no, $prop-val) = (.value, .key);
             my $prop-val-name = $prop-val.subst('-', 'negative_');
             @bitfield-h.push("#define Uni_PVal_{$prop.uc}_$prop-val-name $enum-no");
         }
-        @enums.push($enum-str);
+        @enums.push(compose-array $c-type, $prop, @enum-str);
     }
     @enums.join("\n");
 }
@@ -743,39 +752,49 @@ sub make-bitfield-rows {
     # Create the order of the struct
     @bitfield-h.push("struct binary_prop_bitfield  \{");
     my $bin-prop-nqp := nqp::hash;
+    my @list-for-packing;
+
     for %binary-properties.keys.sort -> $bin {
         say "bin $bin";
-        @code-sorted-props.push($bin);
-        @bitfield-h.push("    unsigned int $bin :1;");
-        nqp::bindkey($bin-prop-nqp, $bin, '1');
+        #@code-sorted-props.push($bin);
+        #@bitfield-h.push("    unsigned int $bin :1;");
+        @list-for-packing.push($bin => 1);
     }
     my $enum-prop-nqp := nqp::hash;
-    my @list-for-packing;
-    for %enum-staging.sort(*.value.bitwidth.Int) {
-        #say "key ", .key;
-        #say "value ", .value.bitwidth;
+    for %enum-staging.sort({ $^a.key unicmp $^b.key } ) {
+        #say "key ", .key, " value ", .value.bitwidth;
         @list-for-packing.push(.key => .value.bitwidth);
     }
     my @packed-enums = compute-packing(@list-for-packing);
     say "Packed-enums: ", @packed-enums.perl;
     say "Packed-enums keys: ", @packed-enums.».key.perl;
     for @packed-enums.».key -> $property {
-        say "enum prop $property";
-        die "$property not found in enum-staging" if %enum-staging{$property}:!exists;
-        @code-sorted-props.push($property);
-        my $bitwidth = %enum-staging{$property}.bitwidth;
-        @bitfield-h.push("    unsigned int $property :$bitwidth;");
-        my $this-prop := nqp::hash;
-        my $built = %enum-staging{$property}.build;
-        for $built.kv -> $key, $value {
-            next if $key eq any('name', 'bitwidth', 'type');
-            my $value_s;
-            my $type = $value.^name;
-            die if $type ne 'Str';
-            $value_s = $value;
-            nqp::bindkey($this-prop, $key, $value_s);
+        my $bitwidth;
+        if %enum-staging{$property}:exists {
+            $bitwidth = %enum-staging{$property}.bitwidth;
+
+            say "enum prop $property";
+            my $this-prop := nqp::hash;
+            my $built = %enum-staging{$property}.build;
+            for $built.kv -> $key, $value {
+                next if $key eq any('name', 'bitwidth', 'type');
+                my $value_s;
+                my $type = $value.^name;
+                die if $type ne 'Str';
+                $value_s = $value;
+                nqp::bindkey($this-prop, $key, $value_s);
+            }
+            nqp::bindkey($enum-prop-nqp, $property, $this-prop);
         }
-        nqp::bindkey($enum-prop-nqp, $property, $this-prop);
+        elsif %binary-properties{$property}:exists {
+            $bitwidth = 1;
+            nqp::bindkey($bin-prop-nqp, $property, '1');
+        }
+        else {
+            die;
+        }
+        @code-sorted-props.push($property);
+        @bitfield-h.push("    unsigned int $property :$bitwidth;");
     }
     @bitfield-h.push("\};");
     @bitfield-h.push("typedef struct binary_prop_bitfield binary_prop_bitfield;");
