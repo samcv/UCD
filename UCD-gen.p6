@@ -497,6 +497,7 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
                 $name ~~ s/', Last>'$/>/;
                 if %First-point {
                     #die "\%First-point: " ~ %First-point.gist ~ "\%hash: " ~ %hash.gist if %First-point !eqv %hash;
+                    # This function can work on ranges
                     apply-hash-to-range("$first-point-cp..$cp", %hash);
                     say "Found Range in UnicodeData: $first-point-cp..$cp";
                     for $first-point-cp..$cp {
@@ -516,18 +517,13 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
                 %First-point = %hash;
                 next;
             }
-            # This function can work on ranges
-            apply-hash-to-range($code-str, %hash);
         }
         else {
             # This only does single points so we use it to improve speed
             apply-hash-to-cp($cp, %hash);
+            # Bind the names hash we generate the Unicode Name C data from
+            nqp::bindkey(%names, nqp::base_I(nqp::decont($cp), 10), $name);
         }
-
-        # Bind the names hash we generate the Unicode Name C data from
-        nqp::bindkey(%names, nqp::base_I(nqp::decont($cp), 10), $name);
-
-
         $num-processed++;
     }
     my $time-took = now - $t1;
@@ -601,7 +597,11 @@ sub apply-hash-to-cp (Int $cp, Hash $hashy) {
             for $hashy{$key}.keys -> $key2 {
                 if !defined %points{$cp}{$key}{$key2} {
                     if $key2 ~~ Int or $key2 ~~ Bool {
-                        %points{$cp}{$key} := $hashy{$key};
+                        #say '%points{$cp}: ', "\$cp: $cp: ", Dump %points{$cp};
+                        #dump $key;
+                        #say '$hashy{$key}: ', Dump $hashy{$key};
+                        %points{$cp}{$key}:delete;
+                        %points{$cp}{$key} = $hashy{$key};
                     }
                     else {
                         die "Don't know how to apply type {$key2.WHAT} in apply-hash-to-cp";
