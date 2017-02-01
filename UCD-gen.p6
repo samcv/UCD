@@ -21,15 +21,14 @@ our %enum-staging;
 our @timers;
 sub timer {
     push @timers, now;
-    say "Took {@timers[*-1] - @timers[*-2]} seconds" if @timers[*-2].defined;
+    say "TIMER {@timers[*-1] - @timers[*-2]} seconds" if @timers[*-2].defined;
 }
 macro dump($x) { quasi { say {{{$x}}}.VAR.name, ": ", Dump {{{$x}}} } };
-my int $collation-level = nqp::unbox_i(7);
-sub infix:<unicmp>(Str:D \a, Str:D \b) returns Order:D {
-    ORDER(
-        nqp::unicmp_s(
-            nqp::unbox_s(a), nqp::unbox_s(b), $collation-level,0,0,0))
-}
+#sub infix:<unicmp>(Str:D \a, Str:D \b) returns Order:D {
+#    ORDER(
+#        nqp::unicmp_s(
+#            nqp::unbox_s(a), nqp::unbox_s(b), 7,0,0))
+#}
 my %points; # Stores all the cp's property values of all types
 my %names = nqp::hash; # Unicode Name hash for generating the name table
 my %binary-properties; # Stores the binary property names
@@ -170,7 +169,9 @@ sub start-routine {
         mkdir $build-folder;
     }
 }
-sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$debug = False, Bool :$names-only = False, Bool :$numeric-value-only = False ) {
+sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0,
+           Bool :$debug = False, Bool :$names-only = False,
+           Bool :$numeric-value-only = False ) {
     $debug-global = $debug;
     $less-global = $less;
     start-routine();
@@ -178,11 +179,12 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0, Bool :$de
     PValueAliases("PropertyValueAliases", %PropertyValueAliases, %PropertyValueAliases_to);
     timer;
     UnicodeData("UnicodeData", $less);
-    timer;
     binary-property(1, "DerivedNormalizationProps");
     my $name-file;
     DerivedNumericValues('extracted/DerivedNumericValues');
-    enumerated-property(1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth') unless $less < 200;
+    enumerated-property(1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth')
+        unless $less < 200;
+        timer;
 
     unless $numeric-value-only {
         $name-file = Generate_Name_List();
@@ -356,7 +358,7 @@ sub get-pvalue-seen (Str $property, $negname) {
 }
 sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filename ) {
     my $seen-value = get-pvalue-seen($propname, $negname);
-    die unless %PropertyValueAliases{$propname}:exists;
+    die $propname unless %PropertyValueAliases{$propname}:exists;
     my Int $i = 0;
     my $t1 = now;
     for slurp-lines($filename) {
@@ -410,17 +412,27 @@ sub PValueAlias ( Str $property, Str $file ) {
         apply-to-cp(@parts[0], %hash)
     }
 }
-
+sub atkey (\hash, \key) {
+    nqp::atkey(hash, key)
+}
+sub str-isn't-empty (\x) {
+    nqp::isne_i( nqp::chars(x), 0)
+}
+sub hex (\code-str) {
+    nqp::atpos(nqp::radix(16, code-str, 0, 0), 0)
+}
 sub UnicodeData ( Str $file, Int $less = 0 ) {
     #register-binary-property(<NFD_QC NFC_QC NFKD_QC NFG_QC Any Bidi_Mirrored>);
     register-binary-property(<Any Bidi_Mirrored>);
     my $seen-ccc = get-pvalue-seen('Canonical_Combining_Class', 0);
     my %seen-ccc;
-    my %seen-gc;
+    my %seen-gc = nqp::hash;
     #3400;<CJK Ideograph Extension A, First>;Lo;0;L;;;;;N;;;;;
     our $first-point-cp;
     my %First-point; # %First-point gets assigned a value if it matches as above
     # and so is the first in a range inside UnicodeData.txt
+    my $num-processed = 0;
+    my $t1 = now;
     for slurp-lines $file {
         next if skip-line($_);
         my @parts = nqp::split(';', $_);
@@ -429,55 +441,59 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
             $suc, $slc, $stc) = @parts;
         #say @parts.perl;
         #exit;
-        my $cp = nqp::atpos(nqp::radix(16, $code-str, 0, 0), 0);
+        my $cp = hex $code-str;
         next if $less != 0 and $cp > $less;
-        my %hash;
+        my %hash = nqp::hash;
         if $gencat {
-            if %seen-gc{$gencat}:exists {
-                %hash{@gc[0]} = %seen-gc{$gencat}{@gc[0]};
-                %hash{@gc[1]} = %seen-gc{$gencat}{@gc[1]};
+            if nqp::existskey(%seen-gc, $gencat) {
+                %hash{@gc[0]} = nqp::atkey(nqp::atkey(%seen-gc, $gencat), @gc[0]);
+                %hash{@gc[1]} =  nqp::atkey(nqp::atkey(%seen-gc, $gencat), @gc[1]);
             }
             else {
-                %hash{@gc[0]} = $gencat.substr(0, 1);
-                %hash{@gc[1]} = $gencat.substr(1, 1);
-                %seen-gc{$gencat}{@gc[0]} = %hash{@gc[0]};
-                %seen-gc{$gencat}{@gc[1]} = %hash{@gc[1]};
+                %hash{@gc[0]} = nqp::substr($gencat, 0, 1);
+                %hash{@gc[1]} = nqp::substr($gencat, 1, 1);
+                my $h := nqp::hash;
+                nqp::bindkey($h, @gc[0], %hash{@gc[0]});
+                nqp::bindkey($h, @gc[1], %hash{@gc[1]});
+                nqp::bindkey(%seen-gc, $gencat, $h);
             }
         }
         if $ccclass {
             %seen-ccc{$ccclass} = True unless %seen-ccc{$ccclass}:exists;
             %hash<Canonical_Combining_Class> = $ccclass;
         }
-        %hash<Unicode_1_Name>            =? $u1name;
-        %hash<Bidi_Class>                =? $bidiclass;
-        %hash<suc>     =  nqp::atpos(nqp::radix(16, $suc, 0, 0), 0) if $suc ne '';
-        %hash<slc>     = nqp::atpos(nqp::radix(16, $slc, 0, 0), 0) if $slc ne '';
-        %hash<stc>     = nqp::atpos(nqp::radix(16, $stc, 0, 0), 0) if $stc ne '';
+        nqp::bindkey(%hash, 'Unicode_1_Name', $u1name) if  nqp::isne_i( nqp::chars($u1name), 0);
+        nqp::bindkey(%hash, 'Bidi_Class', $bidiclass) if $u1name ne '';
+        nqp::bindkey(%hash, 'suc', hex $suc) if str-isn't-empty($suc);
+        nqp::bindkey(%hash, 'slc', hex $slc) if str-isn't-empty($slc);
+        nqp::bindkey(%hash, 'stc', hex $stc) if str-isn't-empty($stc);
+        # We may not need to set the name in the hash in case we only rely on %names
+        nqp::bindkey(%hash, 'name', $name) if str-isn't-empty($name);
+
         #`( For now these are flipped instead of setting this here
         %hash<NFD_QC>  = True;
         %hash<NFC_QC>  = True;
         %hash<NFKD_QC> = True;
         %hash<NFG_QC>  = True;
         )
-        %hash<Any>     = True;
-        %hash<Bidi_Mirrored> = True if $bidimirrored eq 'Y';
+        nqp::bindkey(%hash, 'Any', True);
+        nqp::bindkey(%hash, 'Bidi_Mirrored', True) if nqp::eqat($bidimirrored, 'Y', 0);
 
         if $decmpspec {
             my @dec = nqp::split(' ', $decmpspec);
-            if @dec[0].starts-with('<') {
+            if nqp::eqat(@dec[0], '<', 0) {
                 %decomp_spec{$cp}<type> = @dec.shift;
             }
             else {
                 %decomp_spec{$cp}<type> = 'Canonical';
             }
-            push %decomp_spec{$cp}<mapping>, nqp::atpos(nqp::radix(16, $_, 0, 0), 0)[0] for @dec;
+            %decomp_spec{$cp}<mapping> = @dec.map( { hex $_ } )
         }
-        # We may not need to set the name in the hash in case we only rely on %names;
-        if $name.starts-with('<') {
+        if nqp::eqat($name, '<', 0) {
             if $name.ends-with(', Last>') {
                 $name ~~ s/', Last>'$/>/;
                 if %First-point {
-                    die "\%First-point: " ~ %First-point.gist ~ "\%hash: " ~ %hash.gist if %First-point !eqv %hash;
+                    #die "\%First-point: " ~ %First-point.gist ~ "\%hash: " ~ %hash.gist if %First-point !eqv %hash;
                     apply-to-cp("$first-point-cp..$cp", %hash);
                     say "Found Range in UnicodeData: $first-point-cp..$cp";
                     for $first-point-cp..$cp {
@@ -497,13 +513,23 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
                 %First-point = %hash;
                 next;
             }
+            # This function can work on ranges
+            apply-to-cp($code-str, %hash);
         }
+        else {
+            # This only does single points so we use it to improve speed
+            apply-to-points($cp, %hash);
+        }
+
         # Bind the names hash we generate the Unicode Name C data from
         nqp::bindkey(%names, nqp::base_I(nqp::decont($cp), 10), $name);
 
-        %hash<name>                      =? $name;
-        apply-to-cp($code-str, %hash);
+
+        $num-processed++;
     }
+    my $time-took = now - $t1;
+    say "Took $time-took secs to process $num-processed and ",
+        ($time-took/$num-processed * 1000).fmt("%.4f"), " ms/line";
     my $gc_0-seen = get-pvalue-seen(@gc[0], '');
     my $gc_1-seen = get-pvalue-seen(@gc[1], '');
     for %seen-gc.keys {
@@ -521,7 +547,7 @@ sub set-pvalue-seen (Str:D $property, $negname, %hash) {
 }
 sub apply-to-cp (Str $range-str, Hash $hashy) {
     # If it contains `..` then it is a range
-    my @items = $range-str.split('..').».parse-base(16);
+    my @items = $range-str.split('..').map( { hex $_ } );
     if @items.elems == 2 {
         for Range.new( @items[0], @items[1]) -> $cp {
             apply-to-points($cp, $hashy);
@@ -537,7 +563,7 @@ sub apply-to-cp (Str $range-str, Hash $hashy) {
 }
 sub apply-to-cp2 (Str $range-str, Str $pname, $value) {
     # If it contains `..` then it is a range
-    my @items = $range-str.split('..').».parse-base(16);
+    my @items = $range-str.split('..').map( { hex $_ } );
     if @items.elems == 2 {
         for Range.new( @items[0], @items[1]) -> $cp {
             apply-to-points2($cp, $pname, $value);
