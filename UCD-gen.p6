@@ -24,11 +24,11 @@ sub timer {
     say "TIMER {@timers[*-1] - @timers[*-2]} seconds" if @timers[*-2].defined;
 }
 macro dump($x) { quasi { say {{{$x}}}.VAR.name, ": ", Dump {{{$x}}} } };
-#sub infix:<unicmp>(Str:D \a, Str:D \b) returns Order:D {
-#    ORDER(
-#        nqp::unicmp_s(
-#            nqp::unbox_s(a), nqp::unbox_s(b), 7,0,0))
-#}
+sub infix:<unicmp>(\a, \b) returns Order:D {
+    ORDER(
+        nqp::unicmp_s(
+            nqp::unbox_s(a), nqp::unbox_s(b), 7,0,0))
+}
 my %points; # Stores all the cp's property values of all types
 my %names = nqp::hash; # Unicode Name hash for generating the name table
 my %binary-properties; # Stores the binary property names
