@@ -12,9 +12,9 @@ use seenwords;
 use EncodeBase40;
 use Operators;
 use BitfieldPacking;
-INIT  say "\nStarting…";
-my Str $build-folder = "source";
-my Str $snippets-folder = "snippets";
+INIT say "Starting…";
+constant $build-folder = "source";
+constant $snippets-folder = "snippets";
 # stores lines of bitfield.h
 our @bitfield-h;
 our %enum-staging;
@@ -332,8 +332,8 @@ sub DerivedNumericValues ( Str $filename ) {
         $denominator = $denominator // 1;
         $numerator-seen.saw($numerator);
         $denominator-seen.saw($denominator);
-        apply-to-cp2($cp, 'Numeric_Value_Numerator', $numerator.Int.Str);
-        apply-to-cp2($cp, 'Numeric_Value_Denominator', $denominator.Int.Str);
+        apply-pv-to-range($cp, 'Numeric_Value_Numerator', $numerator.Int.Str);
+        apply-pv-to-range($cp, 'Numeric_Value_Denominator', $denominator.Int.Str);
     }
 }
 sub binary-property ( Int $column, Str $filename ) {
@@ -343,7 +343,7 @@ sub binary-property ( Int $column, Str $filename ) {
         my @parts = .split-trim([';','#'], $column + 2);
         my $property = @parts[$column];
         %props-seen{$property} = True unless %props-seen{$property};
-        apply-to-cp2(@parts[0], @parts[$column], True);
+        apply-pv-to-range(@parts[0], @parts[$column], True);
     }
     register-binary-property(%props-seen.keys.sort);
 }
@@ -367,7 +367,7 @@ sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filenam
         my $range = @parts[0];
         my $prop-val = @parts[$column];
         $seen-value.saw($prop-val);
-        apply-to-cp2($range, $propname, $prop-val);
+        apply-pv-to-range($range, $propname, $prop-val);
     }
     say "Took {now - $t1} to process $propname enums";
 }
@@ -409,11 +409,14 @@ sub PValueAlias ( Str $property, Str $file ) {
         my @parts = .split-trim(';');
         my %hash;
         %hash{$property}{@parts[1]}<type> = @parts[2];
-        apply-to-cp(@parts[0], %hash)
+        apply-hash-to-range(@parts[0], %hash)
     }
 }
 sub atkey (\hash, \key) {
     nqp::atkey(hash, key)
+}
+sub bindkey (\hash, \key, \value) {
+    nqp::bindkey(hash, key, value)
 }
 sub str-isn't-empty (\x) {
     nqp::isne_i( nqp::chars(x), 0)
@@ -494,7 +497,7 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
                 $name ~~ s/', Last>'$/>/;
                 if %First-point {
                     #die "\%First-point: " ~ %First-point.gist ~ "\%hash: " ~ %hash.gist if %First-point !eqv %hash;
-                    apply-to-cp("$first-point-cp..$cp", %hash);
+                    apply-hash-to-range("$first-point-cp..$cp", %hash);
                     say "Found Range in UnicodeData: $first-point-cp..$cp";
                     for $first-point-cp..$cp {
                         nqp::bindkey(%names, nqp::base_I(nqp::decont($_), 10), $name);
@@ -514,11 +517,11 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
                 next;
             }
             # This function can work on ranges
-            apply-to-cp($code-str, %hash);
+            apply-hash-to-range($code-str, %hash);
         }
         else {
             # This only does single points so we use it to improve speed
-            apply-to-points($cp, %hash);
+            apply-hash-to-cp($cp, %hash);
         }
 
         # Bind the names hash we generate the Unicode Name C data from
@@ -545,62 +548,64 @@ sub set-pvalue-seen (Str:D $property, $negname, %hash) {
         $pvalue-seen.saw($_);
     }
 }
-sub apply-to-cp (Str $range-str, Hash $hashy) {
+sub apply-hash-to-range (Str $range-str, Hash $hashy) {
     # If it contains `..` then it is a range
     my @items = $range-str.split('..').map( { hex $_ } );
     if @items.elems == 2 {
-        for Range.new( @items[0], @items[1]) -> $cp {
-            apply-to-points($cp, $hashy);
+        for Range.new( @items[0], @items[1] ) -> $cp {
+            apply-hash-to-cp($cp, $hashy);
         }
     }
     # Otherwise there's only one point
     elsif @items.elems == 1 {
-        apply-to-points(@items[0], $hashy);
+        apply-hash-to-cp(@items[0], $hashy);
     }
     else {
         die "Unknown range '$range-str'";
     }
 }
-sub apply-to-cp2 (Str $range-str, Str $pname, $value) {
+sub apply-pv-to-range (Str $range-str, Str $pname, $value) {
     # If it contains `..` then it is a range
     my @items = $range-str.split('..').map( { hex $_ } );
     if @items.elems == 2 {
-        for Range.new( @items[0], @items[1]) -> $cp {
-            apply-to-points2($cp, $pname, $value);
+        for Range.new( @items[0], @items[1] ) -> $cp {
+            apply-pv-to-cp($cp, $pname, $value);
         }
     }
     # Otherwise there's only one point
     elsif @items.elems == 1 {
-        apply-to-points2(@items[0], $pname, $value);
+        apply-pv-to-cp(@items[0], $pname, $value);
     }
     else {
         die "Unknown range '$range-str'";
     }
 }
-sub apply-to-points2 (Int $cp, Str $pname, $value) {
+sub apply-pv-to-cp (Int $cp, Str $pname, $value) {
     if %points{$cp}{$pname}:exists {
         say "Pname $pname for cp $cp already exists: " ~ Dump %points{$cp}{$pname};
     }
     %points{$cp}{$pname} = $value;
 }
-sub apply-to-points (Int $cp, Hash $hashy) {
+sub apply-hash-to-cp (Int $cp, Hash $hashy) {
+    # Fast path in case cp doesn't exist yet
+    if %points{$cp}:!exists {
+        %points{$cp} = $hashy;
+        return;
+    }
+    # Otherwise we need to go through all the keys and apply them all
     for $hashy.keys -> $key {
         if !defined %points{$cp}{$key} {
             %points{$cp}{$key} = $hashy{$key};
         }
         else {
             for $hashy{$key}.keys -> $key2 {
+                die;
                 if !defined %points{$cp}{$key}{$key2} {
-                    given $key2 {
-                        when Int {
-                            %points{$cp}{$key} = $hashy{$key};
-                        }
-                        when Bool {
-                            %points{$cp}{$key} = $hashy{$key};
-                        }
-                        default {
-                            die "Don't know how to apply type $_ in apply-to-points";
-                        }
+                    if $key2 ~~ Int or $key2 ~~ Bool {
+                        %points{$cp}{$key} = $hashy{$key};
+                    }
+                    else {
+                        die "Don't know how to apply type {$key2.WHAT} in apply-hash-to-cp";
                     }
                 }
                 else {
