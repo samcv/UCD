@@ -601,7 +601,7 @@ sub apply-hash-to-cp (Int $cp, Hash $hashy) {
             for $hashy{$key}.keys -> $key2 {
                 if !defined %points{$cp}{$key}{$key2} {
                     if $key2 ~~ Int or $key2 ~~ Bool {
-                        %points{$cp}{$key} = $hashy{$key};
+                        %points{$cp}{$key} := $hashy{$key};
                     }
                     else {
                         die "Don't know how to apply type {$key2.WHAT} in apply-hash-to-cp";
