@@ -11,7 +11,7 @@ use Set-Range;
 use seenwords;
 use EncodeBase40;
 use Operators;
-use packer;
+use BitfieldPacking;
 INIT  say "\nStarting…";
 my Str $build-folder = "source";
 my Str $snippets-folder = "snippets";
@@ -750,43 +750,22 @@ sub make-bitfield-rows {
         nqp::bindkey($bin-prop-nqp, $bin, '1');
     }
     my $enum-prop-nqp := nqp::hash;
-    my @bitwidth-sorted-enum = %enum-staging.sort(*.value.bitwidth.Int);
-    my %results;
-    my $i = 0;
-    for @bitwidth-sorted-enum.permutations -> @perm {
-        my @nums;
-        for @perm {
-            @nums.push(.value.bitwidth);
-        }
-        %results{$i}<bytes> = packer(@nums);
-        %results{$i++}<perm> = @perm;
+    my @list-for-packing;
+    for %enum-staging.sort(*.value.bitwidth.Int) {
+        #say "key ", .key;
+        #say "value ", .value.bitwidth;
+        @list-for-packing.push(.key => .value.bitwidth);
     }
-    my @size-sorted-enum = %results.keys.sort({
-        my $c = %results{$^a}<bytes> cmp %results{$^b}<bytes>;
-        $c ?? $c !! $^a.Int cmp $^b.Int;
-    });
-    my $best-bytes = %results{@size-sorted-enum[0]}<bytes>;
-    my $worst-bytes = %results{@size-sorted-enum[*-1]}<bytes>;
-    my $best-sorted-enum = %results{@size-sorted-enum[0]}<perm>;
-    my $worst-sorted-enum = %results{@size-sorted-enum[*-1]}<perm>;
-    say $best-sorted-enum.WHAT, "WHAT";
-    #say "Worst order: ", $worst-sorted-enum.perl;
-    say "Best sorted has ", $best-sorted-enum.elems, " elements and is a ",
-        $best-sorted-enum.WHAT, " type.";
-    for ^$best-sorted-enum.elems -> $index {
-        say "Index ", $index, " elems: ", $best-sorted-enum[$index].elems,
-            " is a type: ", $best-sorted-enum[$index].WHAT;
-        say $best-sorted-enum[$index];
-    }
-    say "Saved {$worst-bytes - $best-bytes} per bitfield row by packing";
-    for ^$best-sorted-enum.elems -> $index {
-        my ($property, $obj) = ($best-sorted-enum[$index].key, $best-sorted-enum[$index].value);
+    my @packed-enums = compute-packing(@list-for-packing);
+    say "Packed-enums: ", @packed-enums.perl;
+    say "Packed-enums keys: ", @packed-enums.».key.perl;
+    for @packed-enums.».key -> $property {
         say "enum prop $property";
+        die "$property not found in enum-staging" if %enum-staging{$property}:!exists;
         @code-sorted-props.push($property);
-        my $bitwidth = $obj.bitwidth;
+        my $bitwidth = %enum-staging{$property}.bitwidth;
         @bitfield-h.push("    unsigned int $property :$bitwidth;");
         my $this-prop := nqp::hash;
-        die "$property not found in enum-staging" if %enum-staging{$property}:!exists;
         my $built = %enum-staging{$property}.build;
         for $built.kv -> $key, $value {
             next if $key eq any('name', 'bitwidth', 'type');

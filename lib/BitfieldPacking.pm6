@@ -1,5 +1,5 @@
 constant $bs = 8;
-constant $debug = True;
+constant $debug = False;
 #| Gets the remaining number of items left to pack
 sub num-remain (%h) {
     [+] %h.values.».elems;
@@ -7,19 +7,21 @@ sub num-remain (%h) {
 sub exists-and-elems ( %h, $key ) {
     %h{$key}:exists and %h{$key}.elems;
 }
-sub compute ( @list where { .all ~~ Pair } ) is export {
+sub compute-packing ( @list where { .all ~~ Pair } ) is export {
+    say "Received list: ", @list.perl if $debug;
     my @result;
     my $i = 0;
     my $visual;
     my %h = first-run(@list, @result);
     say %h.perl if $debug;
+    say "before second run Packing:", @result.perl if $debug;
+
     second-run(%h, @result);
     #third-run();
-    say "before loopy" if $debug;
+    say "before loopy Packing:", @result.perl if $debug;
     loopy(%h, @result);
     say "after loopy" if $debug;
-    say "packing:", @result.».value if $debug;
-    say "Remaining: ", num-remain(%h);
+    try say "packing:", @result.».value if $debug;
     push-remaining(%h, @result);
     die unless num-remain(%h) == 0;
     say "Final packing:", @result.».value if $debug;
@@ -28,9 +30,8 @@ sub compute ( @list where { .all ~~ Pair } ) is export {
 }
 sub test-it {
     my @list = init();
-    say compute(@list);
+    say compute-packing(@list);
 }
-test-it;
 sub push-remaining (%h, @result) {
     for %h.keys.sort(-*) -> $key {
         while exists-and-elems(%h, $key) {
@@ -47,7 +48,7 @@ sub loopy (%h, @result) {
         say "First final-run" if $debug;
         final-run(%h, @result);
         say "Remaining: ", %h.perl if $debug;
-        say "Packing:", @result.».value if $debug;
+        say "Packing:", @result.perl if $debug;
         $i++;
         say "thing", "$left {[+] %h.values.».elems}" if $debug;
         last if $left == 0;
@@ -69,17 +70,22 @@ sub first-run (@list, @result) {
         $i.value %% $bs ?? 'div' !! 'not-div',
     }
     my $a = categorize &mapper, @list;
-    for $a<div>.flat {
-        @result.push($_);
+    say "first run \$a: ", $a.perl if $debug;
+    unless $a<div>:!exists {
+        for $a<div>.flat {
+            @result.push($_);
+        }
     }
-    my $b = $a<not-div>;
     my %h;
-    # Make a hash whose keys are the bitwidth and hold an array of which items they
-    # represent
-    for $b.flat -> $pair {
-        my $value = $pair.value;
-        my $item = $pair.key;
-        push %h{$value}, $item  ;
+    unless $a<not-div>:!exists {
+        my $b = $a<not-div>;
+        # Make a hash whose keys are the bitwidth and hold an array of which items they
+        # represent
+        for $b.flat -> $pair {
+            my $value = $pair.value;
+            my $item = $pair.key;
+            push %h{$value}, $item  ;
+        }
     }
     %h;
 }
@@ -114,18 +120,18 @@ sub final-run (%h, @result) {
             while $temp_tot + $key2 <= 8 {
                 last if $key == $key2 and %h{$key}.elems < 2;
                 last if %h{$key2}.elems < 1;
-                say "key[$key] key2 [$key2] temp_tot[$temp_tot] tot[$tot] tot + key2[{$tot + $key2}]";
+                say "key[$key] key2 [$key2] temp_tot[$temp_tot] tot[$tot] tot + key2[{$tot + $key2}]" if $debug;
                 try {
                     unless $pushed-yet {
                         @result.push(%h{$key}.pop => $key);
-                        say "Pushing key $key";
+                        say "Pushing key $key" if $debug;
                         $pushed-yet = True
                     }
                     CATCH { die "FAILURE first"; last }
                 }
                 try {
                     @result.push(%h{$key2}.pop => $key2);
-                    say "Pushing key2 $key2";
+                    say "Pushing key2 $key2" if $debug;
                     CATCH { die "FAILURE second"; last }
                 }
                 $temp_tot += $key2;
