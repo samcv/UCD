@@ -449,29 +449,29 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
         my %hash = nqp::hash;
         if $gencat {
             if nqp::existskey(%seen-gc, $gencat) {
-                %hash{@gc[0]} = nqp::atkey(nqp::atkey(%seen-gc, $gencat), @gc[0]);
-                %hash{@gc[1]} =  nqp::atkey(nqp::atkey(%seen-gc, $gencat), @gc[1]);
+                %hash{@gc[0]} = atkey(nqp::atkey(%seen-gc, $gencat), @gc[0]);
+                %hash{@gc[1]} = atkey(nqp::atkey(%seen-gc, $gencat), @gc[1]);
             }
             else {
                 %hash{@gc[0]} = nqp::substr($gencat, 0, 1);
                 %hash{@gc[1]} = nqp::substr($gencat, 1, 1);
                 my $h := nqp::hash;
-                nqp::bindkey($h, @gc[0], %hash{@gc[0]});
-                nqp::bindkey($h, @gc[1], %hash{@gc[1]});
-                nqp::bindkey(%seen-gc, $gencat, $h);
+                bindkey($h, @gc[0], %hash{@gc[0]});
+                bindkey($h, @gc[1], %hash{@gc[1]});
+                bindkey(%seen-gc, $gencat, $h);
             }
         }
         if $ccclass {
             %seen-ccc{$ccclass} = True unless %seen-ccc{$ccclass}:exists;
             %hash<Canonical_Combining_Class> = $ccclass;
         }
-        nqp::bindkey(%hash, 'Unicode_1_Name', $u1name) if  nqp::isne_i( nqp::chars($u1name), 0);
-        nqp::bindkey(%hash, 'Bidi_Class', $bidiclass) if $u1name ne '';
-        nqp::bindkey(%hash, 'suc', hex $suc) if str-isn't-empty($suc);
-        nqp::bindkey(%hash, 'slc', hex $slc) if str-isn't-empty($slc);
-        nqp::bindkey(%hash, 'stc', hex $stc) if str-isn't-empty($stc);
+        bindkey(%hash, 'Unicode_1_Name', $u1name) if  nqp::isne_i( nqp::chars($u1name), 0);
+        bindkey(%hash, 'Bidi_Class', $bidiclass) if $u1name ne '';
+        bindkey(%hash, 'suc', hex $suc) if str-isn't-empty($suc);
+        bindkey(%hash, 'slc', hex $slc) if str-isn't-empty($slc);
+        bindkey(%hash, 'stc', hex $stc) if str-isn't-empty($stc);
         # We may not need to set the name in the hash in case we only rely on %names
-        nqp::bindkey(%hash, 'name', $name) if str-isn't-empty($name);
+        bindkey(%hash, 'name', $name) if str-isn't-empty($name);
 
         #`( For now these are flipped instead of setting this here
         %hash<NFD_QC>  = True;
@@ -500,7 +500,7 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
                     apply-hash-to-range("$first-point-cp..$cp", %hash);
                     say "Found Range in UnicodeData: $first-point-cp..$cp";
                     for $first-point-cp..$cp {
-                        nqp::bindkey(%names, nqp::base_I(nqp::decont($_), 10), $name);
+                        bindkey(%names, nqp::base_I(nqp::decont($_), 10), $name);
                     }
                     %First-point := {};
                     $first-point-cp = Nil;
@@ -599,7 +599,6 @@ sub apply-hash-to-cp (Int $cp, Hash $hashy) {
         }
         else {
             for $hashy{$key}.keys -> $key2 {
-                die;
                 if !defined %points{$cp}{$key}{$key2} {
                     if $key2 ~~ Int or $key2 ~~ Bool {
                         %points{$cp}{$key} = $hashy{$key};
@@ -698,10 +697,10 @@ sub make-point-index (:$less) {
         my $point_s := nqp::base_I($i, 10);
         nqp::if(nqp::existskey(%point-index, $point_s),
             # if
-            nqp::push_s($mapping, nqp::atkey(%point-index, $point_s)),
+            nqp::push_s($mapping, atkey(%point-index, $point_s)),
             # XXX for now let's denote things that have no value with 1 more than max index
             # else
-            nqp::push_s($mapping, nqp::atkey(%point-index, nqp::add_i($bin-index_i, 1))) # -1 represents NULL
+            nqp::push_s($mapping, atkey(%point-index, nqp::add_i($bin-index_i, 1))) # -1 represents NULL
         );
         $i := nqp::add_i($i, 1);
       )
