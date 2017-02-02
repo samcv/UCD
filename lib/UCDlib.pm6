@@ -24,6 +24,16 @@ augment class Str {
         return $copy;
     }
 }
+
+sub starts-with (\string, \needle) is export  { nqp::eqat(string, needle, 0) }
+sub atkey (\hash, \key) is export            { nqp::atkey(hash, key) }
+sub atkey2 (\hash, \key1, \key2) is export   { nqp::atkey(nqp::atkey(hash, key1), key2) }
+sub bindkey (\hash, \key, \value) is export  { nqp::bindkey(hash, key, value) }
+sub str-isn't-empty (\x) is export           { nqp::isne_i( nqp::chars(x), 0) }
+sub base10_I (\integer) is export          { nqp::base_I(integer, 10) }
+sub base10_I_decont (\integer) is export   { nqp::base_I(nqp::decont(integer), 10) }
+sub existskey (\hash, \key) is export      { nqp::existskey(hash, key) }
+sub hex (\code-str) is export      { nqp::atpos(nqp::radix(16, code-str, 0, 0), 0) }
 #| Slurps files from the snippets folder and concatenates them together
 #| The first argument is the folder name inside /snippets that they are in
 #| The second argument make it only concat files which contain that string

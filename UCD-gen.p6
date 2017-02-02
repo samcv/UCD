@@ -29,7 +29,7 @@ sub infix:<unicmp>(\a, \b) returns Order:D {
         nqp::unicmp_s(
             nqp::unbox_s(a), nqp::unbox_s(b), 7,0,0))
 }
-my %points; # Stores all the cp's property values of all types
+my %points = nqp::hash; # Stores all the cp's property values of all types
 my %names = nqp::hash; # Unicode Name hash for generating the name table
 my %binary-properties; # Stores the binary property names
 # Stores enum prop names and also the property
@@ -45,7 +45,7 @@ my %PropertyNameAliases;
 my %PropertyNameAliases_to;
 my %PropertyValueAliases_to;
 my %missing;
-my $missing-str = '# @missing';
+constant $missing-str = '# @missing';
 constant @gc = 'General_Category_1', 'General_Category_2';
 sub missing (Str $line is copy) {
     # @missing: 0000..10FFFF; cjkAccountingNumeric; NaN
@@ -53,19 +53,6 @@ sub missing (Str $line is copy) {
     $line ~~ s/$missing-str': '//;
     my @parts = $line.split-trim(';');
     %missing{@parts[1]} = @parts[2];
-}
-sub skip-line ( Str $line ) is export {
-    if $line eq '' {
-        return True;
-    }
-    elsif $line.starts-with('#') {
-        missing($line) if $line.starts-with($missing-str);
-        return True;
-    }
-    elsif $line.starts-with(' ') {
-        return True if $line.match(/^\s*$/);
-    }
-    False;
 }
 sub PValueAliases (Str $filename, %aliases, %aliases_to?) {
     for slurp-lines($filename) -> $line {
@@ -404,37 +391,23 @@ sub PValueAlias ( Str $property, Str $file ) {
         apply-hash-to-range(@parts[0], %hash)
     }
 }
-sub starts-with (\string, \needle) {
-    nqp::eqat(string, needle, 0)
-}
-sub atkey (\hash, \key) {
-    nqp::atkey(hash, key)
-}
-sub atkey2 (\hash, \key1, \key2) {
-    nqp::atkey(nqp::atkey(hash, key1), key2)
-}
-sub bindkey (\hash, \key, \value) {
-    nqp::bindkey(hash, key, value)
-}
-sub str-isn't-empty (\x) {
-    nqp::isne_i( nqp::chars(x), 0)
-}
-sub hex (\code-str) {
-    nqp::atpos(nqp::radix(16, code-str, 0, 0), 0)
-}
-sub base10_I ( \integer ) {
-    nqp::base_I(integer, 10)
-}
-sub base10_I_decont ( \integer ) {
-    nqp::base_I(nqp::decont(integer), 10)
-}
-sub existskey (\hash, \key) {
-    nqp::existskey(hash, key)
+sub skip-line ( Str $line ) is export {
+    if $line eq '' {
+        return True;
+    }
+    elsif $line.starts-with('#') {
+        missing($line) if $line.starts-with($missing-str);
+        return True;
+    }
+    elsif $line.starts-with(' ') {
+        return True if $line.match(/^\s*$/);
+    }
+    False;
 }
 sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
     #register-binary-property(<NFD_QC NFC_QC NFKD_QC NFG_QC Any Bidi_Mirrored>);
     register-binary-property(<Any Bidi_Mirrored>);
-    my %seen-ccc;
+    my %seen-ccc = nqp::hash;
     my %seen-gc = nqp::hash;
     #3400;<CJK Ideograph Extension A, First>;Lo;0;L;;;;;N;;;;;
     our $first-point-cp;
@@ -468,7 +441,7 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
             bindkey(%hash, 'gencat', $gencat);
         }
         if $ccclass {
-            %seen-ccc{$ccclass} = True unless %seen-ccc{$ccclass}:exists;
+            bindkey(%seen-ccc, $ccclass, True);
             bindkey(%hash, 'Canonical_Combining_Class', $ccclass);
         }
         bindkey(%hash, 'Unicode_1_Name', $u1name) if  str-isn't-empty($u1name);
@@ -583,37 +556,33 @@ sub apply-pv-to-cp (Int $cp, Str $pname, $value) {
     if %points{$cp}{$pname}:exists {
         return if %points{$cp}{$pname} eqv $value;
         my $var = %points{$cp}{$pname};
-        say "Pname $pname for cp $cp already exists: '$var'";
-        say "Tried to replace with $value";
-        exit;
+        say "Pname $pname for cp $cp already exists: '$var' ",
+            "Tried to replace with $value";
         %points{$cp}{$pname}:delete;
     }
     %points{$cp}{$pname} = $value;
 }
 sub apply-hash-to-cp (Int $cp, Hash $hashy) {
+    my $cp_s := base10_I($cp);
     # Fast path in case cp doesn't exist yet
-    if %points{$cp}:!exists {
-        %points{$cp} = $hashy;
+    if !existskey(%points, $cp_s) {
+        bindkey(%points, $cp_s, $hashy);
+        #%points{$cp} = $hashy;
         return;
     }
     # Otherwise we need to go through all the keys and apply them all
     for $hashy.keys -> $key {
-        if %points{$cp}{$key}:!exists {
-            %points{$cp}{$key} = $hashy{$key};
+        if %points{$cp_s}{$key}:!exists {
+            %points{$cp_s}{$key} = $hashy{$key};
         }
         else {
             for $hashy{$key}.keys -> $key2 {
-                if %points{$cp}{$key}{$key2}:!exists {
-                    if $key2 ~~ Int or $key2 ~~ Bool {
-                        %points{$cp}{$key}:delete;
-                        %points{$cp}{$key} = $hashy{$key};
-                    }
-                    else {
-                        die "Don't know how to apply type {$key2.WHAT} in apply-hash-to-cp";
-                    }
+                if $key2 ~~ Int or $key2 ~~ Bool {
+                    %points{$cp_s}{$key}:delete;
+                    %points{$cp_s}{$key} = $hashy{$key};
                 }
                 else {
-                    die "This level of hash NYI";
+                    die "Don't know how to apply type {$key2.WHAT} in apply-hash-to-cp";
                 }
             }
         }
