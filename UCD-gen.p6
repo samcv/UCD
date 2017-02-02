@@ -167,7 +167,6 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0,
     UnicodeData("UnicodeData", $less, $no-UnicodeData);
     timer;
 
-    write-file('names.c', Generate_Name_List()) unless $no-UnicodeData;
     unless $names-only {
         constant @enum-data =
             (1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth'),
@@ -192,6 +191,7 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0,
         tweak_nfg_qc();
     }
     dump-json($dump);
+    write-file('names.c', Generate_Name_List()) unless $no-UnicodeData;
     unless $nomake {
         my $int-main;
         if $less == 0 {
@@ -417,7 +417,6 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
     my @timers;
     for slurp-lines $file {
         next if skip-line($_);
-        @timers.push(now) if $num-processed %% 500;
         my @parts = nqp::split(';', $_);
         my ($code-str, $name, $gencat, $ccclass, $bidiclass, $decmpspec,
             $num1, $num2, $num3, $bidimirrored, $u1name, $isocomment,
@@ -476,7 +475,10 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
                 if %First-point {
                     #die "\%First-point: " ~ %First-point.gist ~ "\%hash: " ~ %hash.gist if %First-point !eqv %hash;
                     # This function can work on ranges
-                    apply-hash-to-range("$first-point-cp..$cp", %hash);
+                    for Range.new($first-point-cp, $cp) {
+                        apply-hash-to-cp($_, %hash);
+                        @timers.push(now) if $num-processed++ %% 500;
+                    }
                     say "Found Range in UnicodeData: $first-point-cp..$cp";
                     for $first-point-cp..$cp {
                         bindkey(%names, base10_I_decont($_), $name);
@@ -503,8 +505,8 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
             apply-hash-to-cp($cp, %hash);
             # Bind the names hash we generate the Unicode Name C data from
             bindkey(%names, base10_I_decont($cp), $name);
+            @timers.push(now) if $num-processed++ %% 500;
         }
-        $num-processed++;
     }
     my $time-took = now - $t1;
     say "Took $time-took secs to process $num-processed and ",
