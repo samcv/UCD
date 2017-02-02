@@ -18,10 +18,12 @@ constant $snippets-folder = "snippets";
 # stores lines of bitfield.h
 our @bitfield-h;
 our %enum-staging;
-our @timers;
-sub timer {
-    push @timers, now;
-    say "TIMER {@timers[*-1] - @timers[*-2]} seconds" if @timers[*-2].defined;
+sub timer (Str $name = '') {
+    state %timers;
+    push %timers{$name}, now;
+    if %timers{$name}.elems > 1 {
+        say "TIMER $name {%timers{$name}[*-1] - %timers{$name}[*-2]} seconds";
+    }
 }
 macro dump($x) { quasi { say {{{$x}}}.VAR.name, ": ", Dump {{{$x}}} } };
 sub infix:<unicmp>(\a, \b) returns Order:D {
@@ -163,9 +165,9 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0,
     start-routine();
     PNameAliases("PropertyAliases", %PropertyNameAliases, %PropertyNameAliases_to);
     PValueAliases("PropertyValueAliases", %PropertyValueAliases, %PropertyValueAliases_to);
-    timer;
+    timer('UnicodeData');
     UnicodeData("UnicodeData", $less, $no-UnicodeData);
-    timer;
+    timer('UnicodeData');
 
     unless $names-only {
         constant @enum-data =
@@ -358,19 +360,17 @@ sub register-binary-property (+@names) {
 sub compute-bitwidth ( Int $max ) { ($max - 1).base(2).chars }
 sub tweak_nfg_qc {
     note "Tweaking NFG_QC…";
+    timer('tweak_nfg_qc');
     # See http://www.unicode.org/reports/tr29/tr29-27.html#Grapheme_Cluster_Boundary_Rules
-    my @iter = %points.keys;
-    my $iter = %points.keys;
-    say "ITER ", @iter.WHAT;
-    say "ITER2 ", $iter.WHAT;
-    for @iter -> $code {
-        say "iterating";
+    for %points.keys -> $code {
         # \r
         if ($code == 0x0D) {
-            %points{$code}<NFG_QC> = False;
+            #%points{$code}<NFG_QC> = False;
         }
         # SpacingMark, and a couple of specials
-        elsif (%points{$code}<gencat_name> eq 'Mc' || $code == 0x0E33 || $code == 0x0EB3) {
+        elsif (%points{$code}<General_Category>:exists and %points{$code}<General_Category> eq 'Mc')
+            || $code == 0x0E33 || $code == 0x0EB3
+        {
             %points{$code}<NFG_QC> = False;
         }
         # For now set all Emoji to NFG_QC 0
@@ -380,6 +380,7 @@ sub tweak_nfg_qc {
             %points{$code}<NFG_QC>= False if %points{$code}{$prop};
         }
     }
+    timer('tweak_nfg_qc');
 }
 sub PValueAlias ( Str $property, Str $file ) {
     for slurp-lines $file {
@@ -426,6 +427,7 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
         next if $no-UnicodeData and $cp > 100;
         my %hash = nqp::hash;
         if $gencat {
+            bindkey(%hash, 'General_Category', $gencat);
             if nqp::existskey(%seen-gc, $gencat) {
                 %hash{@gc[0]} = atkey2(%seen-gc, $gencat, @gc[0]);
                 %hash{@gc[1]} = atkey2(%seen-gc, $gencat, @gc[1]);
