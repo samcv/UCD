@@ -523,9 +523,7 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
     my @a = gather {
         take @timers[$_ + 1] - @timers[$_] for ^@timers.end;
     }
-    say '=' x 20;
-    say @a.join(',');
-    say '=' x 20;
+    say join("\n", '=' x 20, @a.join(','), '=' x 20) if @a;
     set-pvalue-seen("Canonical_Combining_Class", 0, %seen-ccc);
 }
 sub set-pvalue-seen (Str:D $property, $negname, %hash) {

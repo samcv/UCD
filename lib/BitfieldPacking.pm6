@@ -12,12 +12,11 @@ sub compute-packing ( @list where { .all ~~ Pair } ) is export {
     my @result;
     my $i = 0;
     my $visual;
-    my %h = first-run(@list, @result);
+    my %h{Int} = first-run(@list, @result);
     say %h.perl if $debug;
     say "before second run Packing:", @result.perl if $debug;
 
     second-run(%h, @result);
-    #third-run();
     say "before loopy Packing:", @result.perl if $debug;
     loopy(%h, @result);
     say "after loopy" if $debug;
@@ -76,7 +75,7 @@ sub first-run (@list, @result) {
             @result.push($_);
         }
     }
-    my %h;
+    my %h{Int};
     unless $a<not-div>:!exists {
         my $b = $a<not-div>;
         # Make a hash whose keys are the bitwidth and hold an array of which items they
@@ -121,39 +120,18 @@ sub final-run (%h, @result) {
                 last if $key == $key2 and %h{$key}.elems < 2;
                 last if %h{$key2}.elems < 1;
                 say "key[$key] key2 [$key2] temp_tot[$temp_tot] tot[$tot] tot + key2[{$tot + $key2}]" if $debug;
-                try {
-                    unless $pushed-yet {
-                        @result.push(%h{$key}.pop => $key);
-                        say "Pushing key $key" if $debug;
-                        $pushed-yet = True
-                    }
-                    CATCH { die "FAILURE first"; last }
+                unless $pushed-yet {
+                    @result.push((%h{$key}.pop orelse die $_) => $key);
+                    say "Pushing key $key" if $debug;
+                    $pushed-yet = True
                 }
-                try {
-                    @result.push(%h{$key2}.pop => $key2);
-                    say "Pushing key2 $key2" if $debug;
-                    CATCH { die "FAILURE second"; last }
-                }
+                @result.push((%h{$key2}.pop orelse die $_) => $key2);
+                say "Pushing key2 $key2" if $debug;
                 $temp_tot += $key2;
                 $tot = $temp_tot;
             }
 
         }
 
-    }
-}
-sub third-run (%h, @result) {
-    # Use the 1 wide to pack what's left
-    for %h.keys.sort(-*) -> $key {
-        last unless %h<1>.elems;
-        while %h{$key}.elems {
-            my $a2 = get-remain($key);
-            say "2 key $key a2 $a2" if $debug;
-            last if %h<1>.elems < $a2;
-            @result.push(%h{$key}.pop => $key);
-            for ^$a2 {
-                @result.push(%h<1>.pop => 1);
-            }
-        }
     }
 }
