@@ -363,7 +363,6 @@ sub tweak_nfg_qc {
     my $iter = %points.keys;
     say "ITER ", @iter.WHAT;
     say "ITER2 ", $iter.WHAT;
-    exit;
     for @iter -> $code {
         say "iterating";
         # \r
@@ -415,8 +414,10 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
     # and so is the first in a range inside UnicodeData.txt
     my $num-processed = 0;
     my $t1 = now;
+    my @timers;
     for slurp-lines $file {
         next if skip-line($_);
+        @timers.push(now) if $num-processed %% 500;
         my @parts = nqp::split(';', $_);
         my ($code-str, $name, $gencat, $ccclass, $bidiclass, $decmpspec,
             $num1, $num2, $num3, $bidimirrored, $u1name, $isocomment,
@@ -470,6 +471,7 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
         }
         if starts-with($name, '<') {
             if $name.ends-with(', Last>') {
+                my $t9 = now;
                 $name ~~ s/', Last>'$/>/;
                 if %First-point {
                     #die "\%First-point: " ~ %First-point.gist ~ "\%hash: " ~ %hash.gist if %First-point !eqv %hash;
@@ -481,6 +483,7 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
                     }
                     %First-point := {};
                     $first-point-cp = Nil;
+                    say "Took ", now - $t9, " seconds to process this range";
                     next;
                 }
                 else {
@@ -490,6 +493,7 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
             elsif $name.ends-with(', First>') {
                 $first-point-cp = $cp;
                 $name ~~ s/', First>'$/>/;
+                say "Found first point of range $name cp: $cp";
                 %First-point = %hash;
                 next;
             }
@@ -512,6 +516,12 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
         $gc_0-seen.saw(@letters[0]);
         $gc_1-seen.saw(@letters[1]);
     }
+    my @a = gather {
+        take @timers[$_ + 1] - @timers[$_] for ^@timers.end;
+    }
+    say '=' x 20;
+    say @a.join(',');
+    say '=' x 20;
     set-pvalue-seen("Canonical_Combining_Class", 0, %seen-ccc);
 }
 sub set-pvalue-seen (Str:D $property, $negname, %hash) {
