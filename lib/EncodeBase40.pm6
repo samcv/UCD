@@ -87,6 +87,7 @@ class base40-string {
         }
         while $items_i < $items_f {
             my str $item = nqp::substr($string, $items_i++, 1);
+            # This saves the indexes of names
             if $item eq "\0" {
                 if $counter % 2 == 0 {
                     $indices.push(nqp::elems($coded-nums));
@@ -152,7 +153,7 @@ class base40-string {
         }
         my $name_index = "#define num_encoded_codepoints = $!num_encoded_codepoints\n" ~
                             compose-array(
-                                compute-type($indices.elems), "name_index",
+                                compute-type(self.elems), "name_index",
                                 $indices.elems, $indices.join(',') );
 
         return $str ~ "\n" ~ $name_index ~ "\n";

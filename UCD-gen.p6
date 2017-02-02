@@ -170,53 +170,38 @@ sub start-routine {
     }
 }
 sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0,
-           Bool :$debug = False, Bool :$names-only = False,
-           Bool :$numeric-value-only = False ) {
+           Bool :$debug = False, Bool :$names-only = False, Bool :$no-UnicodeData ) {
     $debug-global = $debug;
     $less-global = $less;
     start-routine();
     PNameAliases("PropertyAliases", %PropertyNameAliases, %PropertyNameAliases_to);
     PValueAliases("PropertyValueAliases", %PropertyValueAliases, %PropertyValueAliases_to);
     timer;
-    UnicodeData("UnicodeData", $less);
-    binary-property(1, "DerivedNormalizationProps");
-    my $name-file;
-    DerivedNumericValues('extracted/DerivedNumericValues');
-    enumerated-property(1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth')
-        unless $less < 200;
-        timer;
+    UnicodeData("UnicodeData", $less) unless $no-UnicodeData;
+    timer;
 
-    unless $numeric-value-only {
-        $name-file = Generate_Name_List();
-        write-file('names.c', $name-file);
-    }
-    unless $names-only or $numeric-value-only {
+    write-file('names.c', Generate_Name_List()) unless $no-UnicodeData;
+    unless $names-only {
         constant @enum-data =
+            (1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth'),
             (1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType'),
-            (1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
-        for @enum-data {
-            enumerated-property(|$_);
-        }
-        #binary-property(1, 'extracted/DerivedBinaryProperties');
-
-        #enumerated-property(1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType');
-
-        #enumerated-property(1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty');
-    }
-    unless $less or $names-only or $numeric-value-only {
-        # The values in this file are already in DerivedEastAsianWidth
-        #enumerated-property(1, 'N', 'East_Asian_Width', 'EastAsianWidth');
-        enumerated-property(1, '', 'Jamo_Short_Name', 'Jamo');
-        binary-property(1, 'PropList');
-        enumerated-property(1, 'L', 'Bidi_Class', 'extracted/DerivedBidiClass');
-        enumerated-property(1, 'No_Joining_Group', 'Joining_Group', 'extracted/DerivedJoiningGroup');
-        enumerated-property(1, 'Non_Joining', 'Joining_Type', 'extracted/DerivedJoiningGroup');
-        binary-property(1, 'emoji/emoji-data');
-        binary-property(1, 'DerivedCoreProperties');
-        enumerated-property(1, 'Other', 'Word_Break', 'auxiliary/WordBreakProperty');
-        enumerated-property(1, 'Other', 'Line_Break', 'LineBreak');
-        # Not needed, in UnicodeData ?
-        # Also we don't account for this case where we try and add a property that already exists
+            (1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty'),
+            (1, '', 'Jamo_Short_Name', 'Jamo'),
+            (1, 'L', 'Bidi_Class', 'extracted/DerivedBidiClass'),
+            (1, 'No_Joining_Group', 'Joining_Group', 'extracted/DerivedJoiningGroup'),
+            (1, 'Non_Joining', 'Joining_Type', 'extracted/DerivedJoiningGroup'),
+            (1, 'Other', 'Word_Break', 'auxiliary/WordBreakProperty'),
+            (1, 'Other', 'Line_Break', 'LineBreak');
+        constant @bin-data =
+            (1, 'extracted/DerivedBinaryProperties'),
+            (1, 'PropList'),
+            (1, 'emoji/emoji-data'),
+            (1, 'DerivedCoreProperties'),
+            (1, "DerivedNormalizationProps");
+        my $head = $less ?? 3 !! Inf;
+        enumerated-property(|$_) for @enum-data.pick($head);
+        binary-property(|$_) for @bin-data.pick($head);
+        DerivedNumericValues('extracted/DerivedNumericValues');
         tweak_nfg_qc();
     }
     dump-json($dump);
@@ -356,8 +341,8 @@ sub get-pvalue-seen (Str $property, $negname) {
         return %enum-staging{$property};
     }
 }
-sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filename ) {
-    my $seen-value = get-pvalue-seen($propname, $negname);
+sub enumerated-property ( Int $column, $negname, Str $propname, Str $filename ) {
+    my %seen-value = nqp::hash;
     die $propname unless %PropertyValueAliases{$propname}:exists;
     my Int $i = 0;
     my $t1 = now;
@@ -366,9 +351,10 @@ sub enumerated-property ( Int $column, Str $negname, Str $propname, Str $filenam
         my @parts = .split-trim([';','#'], $column + 2);
         my $range = @parts[0];
         my $prop-val = @parts[$column];
-        $seen-value.saw($prop-val);
+        bindkey(%seen-value, $prop-val, True);
         apply-pv-to-range($range, $propname, $prop-val);
     }
+    set-pvalue-seen($propname, $negname, %seen-value);
     say "Took {now - $t1} to process $propname enums";
 }
 sub register-binary-property (+@names) {
@@ -578,7 +564,7 @@ sub apply-pv-to-range (Str $range-str, Str $pname, $value) {
 }
 sub apply-pv-to-cp (Int $cp, Str $pname, $value) {
     if %points{$cp}{$pname}:exists {
-        say "Pname $pname for cp $cp already exists: " ~ Dump %points{$cp}{$pname};
+        say "Pname $pname for cp $cp already exists: '{%points{$cp}{$pname}}'";
     }
     %points{$cp}{$pname} = $value;
 }
@@ -597,9 +583,6 @@ sub apply-hash-to-cp (Int $cp, Hash $hashy) {
             for $hashy{$key}.keys -> $key2 {
                 if !defined %points{$cp}{$key}{$key2} {
                     if $key2 ~~ Int or $key2 ~~ Bool {
-                        #say '%points{$cp}: ', "\$cp: $cp: ", Dump %points{$cp};
-                        #dump $key;
-                        #say '$hashy{$key}: ', Dump $hashy{$key};
                         %points{$cp}{$key}:delete;
                         %points{$cp}{$key} = $hashy{$key};
                     }
@@ -727,12 +710,11 @@ sub make-bitfield-rows {
         @list-for-packing.push($bin => 1);
     }
     my $enum-prop-nqp := nqp::hash;
-    for %enum-staging.sort({ $^a.key unicmp $^b.key } ) {
+    for %enum-staging.sort({ $^a.key unicmp $^b.key }) {
         @list-for-packing.push(.key => .value.bitwidth);
     }
     my @packed-enums = compute-packing(@list-for-packing);
     say "Packed-enums: ", @packed-enums.perl;
-    say "Packed-enums keys: ", @packed-enums.».key.perl;
     for @packed-enums.».key -> $property {
         my $bitwidth;
         if %enum-staging{$property}:exists {
@@ -740,12 +722,9 @@ sub make-bitfield-rows {
             my $this-prop := nqp::hash;
             my $built = %enum-staging{$property}.build;
             for $built.kv -> $key, $value {
-                next if $key eq any('name', 'bitwidth', 'type');
-                my $value_s;
                 my $type = $value.^name;
                 die if $type ne 'Str';
-                $value_s = $value;
-                nqp::bindkey($this-prop, $key, $value_s);
+                nqp::bindkey($this-prop, $key, $value);
             }
             nqp::bindkey($enum-prop-nqp, $property, $this-prop);
         }
@@ -835,4 +814,5 @@ sub dump-json ( Bool $dump ) {
        %PropertyNameAliases, %PropertyNameAliases_to, %PropertyValueAliases_to {
         write-file(.VAR.name ~ '.json', to-json($_));
     }
+    write-file(%enum-staging.VAR.name ~ '.txt', Dump %enum-staging);
 }
