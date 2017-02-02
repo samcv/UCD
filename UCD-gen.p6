@@ -177,7 +177,7 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0,
     PNameAliases("PropertyAliases", %PropertyNameAliases, %PropertyNameAliases_to);
     PValueAliases("PropertyValueAliases", %PropertyValueAliases, %PropertyValueAliases_to);
     timer;
-    UnicodeData("UnicodeData", $less) unless $no-UnicodeData;
+    UnicodeData("UnicodeData", $less, $no-UnicodeData);
     timer;
 
     write-file('names.c', Generate_Name_List()) unless $no-UnicodeData;
@@ -189,9 +189,9 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0,
             (1, '', 'Jamo_Short_Name', 'Jamo'),
             (1, 'L', 'Bidi_Class', 'extracted/DerivedBidiClass'),
             (1, 'No_Joining_Group', 'Joining_Group', 'extracted/DerivedJoiningGroup'),
-            (1, 'Non_Joining', 'Joining_Type', 'extracted/DerivedJoiningGroup'),
+            (1, 'Non_Joining', 'Joining_Type', 'extracted/DerivedJoiningType'),
             (1, 'Other', 'Word_Break', 'auxiliary/WordBreakProperty'),
-            (1, 'Other', 'Line_Break', 'LineBreak');
+            (1, 'Unknown', 'Line_Break', 'LineBreak');
         constant @bin-data =
             (1, 'extracted/DerivedBinaryProperties'),
             (1, 'PropList'),
@@ -233,7 +233,7 @@ sub Generate_Name_List {
     my $seen-words = seen-words.new(levels-to-gen => 1);
     sub get-shift-levels {
         for 0..$max -> $cp {
-            my str $cp_s = nqp::base_I(nqp::decont($cp), 10);
+            my str $cp_s = base10_I(nqp::decont($cp));
             if nqp::existskey(%names, $cp_s) {
                 my $s := nqp::atkey(%names, $cp_s);
                 next if $s.contains('<');
@@ -355,24 +355,30 @@ sub enumerated-property ( Int $column, $negname, Str $propname, Str $filename ) 
         apply-pv-to-range($range, $propname, $prop-val);
     }
     set-pvalue-seen($propname, $negname, %seen-value);
-    say "Took {now - $t1} to process $propname enums";
+    say "Took {now - $t1} seconds to process $propname enums";
 }
 sub register-binary-property (+@names) {
     for @names -> $name {
         die "\@names: " ~ Dump @names ~ "  \$name[$name] doesn't !~~ Str " if $name !~~ Str;
-        note "Registering binary property $name";
+        note "Registering binary property $name" if $debug-global;
         if %binary-properties{$name}:exists {
             note "Tried to add $name but binary property already exists";
         }
         %binary-properties{$name} = name => $name, bitwidth => 1;
     }
+    note "registering @names.join(', ') binary properties";
 }
 sub compute-bitwidth ( Int $max ) { ($max - 1).base(2).chars }
 sub tweak_nfg_qc {
     note "Tweaking NFG_QC…";
     # See http://www.unicode.org/reports/tr29/tr29-27.html#Grapheme_Cluster_Boundary_Rules
-    quietly for %points.keys -> $code {
-        die %points{$code}.perl unless $code.defined;
+    my @iter = %points.keys;
+    my $iter = %points.keys;
+    say "ITER ", @iter.WHAT;
+    say "ITER2 ", $iter.WHAT;
+    exit;
+    for @iter -> $code {
+        say "iterating";
         # \r
         if ($code == 0x0D) {
             %points{$code}<NFG_QC> = False;
@@ -398,8 +404,14 @@ sub PValueAlias ( Str $property, Str $file ) {
         apply-hash-to-range(@parts[0], %hash)
     }
 }
+sub starts-with (\string, \needle) {
+    nqp::eqat(string, needle, 0)
+}
 sub atkey (\hash, \key) {
     nqp::atkey(hash, key)
+}
+sub atkey2 (\hash, \key1, \key2) {
+    nqp::atkey(nqp::atkey(hash, key1), key2)
 }
 sub bindkey (\hash, \key, \value) {
     nqp::bindkey(hash, key, value)
@@ -410,10 +422,18 @@ sub str-isn't-empty (\x) {
 sub hex (\code-str) {
     nqp::atpos(nqp::radix(16, code-str, 0, 0), 0)
 }
-sub UnicodeData ( Str $file, Int $less = 0 ) {
+sub base10_I ( \integer ) {
+    nqp::base_I(integer, 10)
+}
+sub base10_I_decont ( \integer ) {
+    nqp::base_I(nqp::decont(integer), 10)
+}
+sub existskey (\hash, \key) {
+    nqp::existskey(hash, key)
+}
+sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
     #register-binary-property(<NFD_QC NFC_QC NFKD_QC NFG_QC Any Bidi_Mirrored>);
     register-binary-property(<Any Bidi_Mirrored>);
-    my $seen-ccc = get-pvalue-seen('Canonical_Combining_Class', 0);
     my %seen-ccc;
     my %seen-gc = nqp::hash;
     #3400;<CJK Ideograph Extension A, First>;Lo;0;L;;;;;N;;;;;
@@ -428,15 +448,14 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
         my ($code-str, $name, $gencat, $ccclass, $bidiclass, $decmpspec,
             $num1, $num2, $num3, $bidimirrored, $u1name, $isocomment,
             $suc, $slc, $stc) = @parts;
-        #say @parts.perl;
-        #exit;
         my $cp = hex $code-str;
         next if $less != 0 and $cp > $less;
+        next if $no-UnicodeData and $cp > 100;
         my %hash = nqp::hash;
         if $gencat {
             if nqp::existskey(%seen-gc, $gencat) {
-                %hash{@gc[0]} = atkey(nqp::atkey(%seen-gc, $gencat), @gc[0]);
-                %hash{@gc[1]} = atkey(nqp::atkey(%seen-gc, $gencat), @gc[1]);
+                %hash{@gc[0]} = atkey2(%seen-gc, $gencat, @gc[0]);
+                %hash{@gc[1]} = atkey2(%seen-gc, $gencat, @gc[1]);
             }
             else {
                 %hash{@gc[0]} = nqp::substr($gencat, 0, 1);
@@ -446,13 +465,14 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
                 bindkey($h, @gc[1], %hash{@gc[1]});
                 bindkey(%seen-gc, $gencat, $h);
             }
+            bindkey(%hash, 'gencat', $gencat);
         }
         if $ccclass {
             %seen-ccc{$ccclass} = True unless %seen-ccc{$ccclass}:exists;
-            %hash<Canonical_Combining_Class> = $ccclass;
+            bindkey(%hash, 'Canonical_Combining_Class', $ccclass);
         }
-        bindkey(%hash, 'Unicode_1_Name', $u1name) if  nqp::isne_i( nqp::chars($u1name), 0);
-        bindkey(%hash, 'Bidi_Class', $bidiclass) if $u1name ne '';
+        bindkey(%hash, 'Unicode_1_Name', $u1name) if  str-isn't-empty($u1name);
+        bindkey(%hash, 'Bidi_Class', $bidiclass) if str-isn't-empty($u1name);
         bindkey(%hash, 'suc', hex $suc) if str-isn't-empty($suc);
         bindkey(%hash, 'slc', hex $slc) if str-isn't-empty($slc);
         bindkey(%hash, 'stc', hex $stc) if str-isn't-empty($stc);
@@ -465,20 +485,17 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
         %hash<NFKD_QC> = True;
         %hash<NFG_QC>  = True;
         )
-        nqp::bindkey(%hash, 'Any', True);
-        nqp::bindkey(%hash, 'Bidi_Mirrored', True) if nqp::eqat($bidimirrored, 'Y', 0);
+        bindkey(%hash, 'Any', True);
+        bindkey(%hash, 'Bidi_Mirrored', True) if starts-with($bidimirrored, 'Y');
 
         if $decmpspec {
             my @dec = nqp::split(' ', $decmpspec);
-            if nqp::eqat(@dec[0], '<', 0) {
-                %decomp_spec{$cp}<type> = @dec.shift;
-            }
-            else {
-                %decomp_spec{$cp}<type> = 'Canonical';
-            }
+            %decomp_spec{$cp}<type> = starts-with(@dec[0], '<')
+            ?? @dec.shift
+            !! 'Canonical';
             %decomp_spec{$cp}<mapping> = @dec.map( { hex $_ } )
         }
-        if nqp::eqat($name, '<', 0) {
+        if starts-with($name, '<') {
             if $name.ends-with(', Last>') {
                 $name ~~ s/', Last>'$/>/;
                 if %First-point {
@@ -487,7 +504,7 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
                     apply-hash-to-range("$first-point-cp..$cp", %hash);
                     say "Found Range in UnicodeData: $first-point-cp..$cp";
                     for $first-point-cp..$cp {
-                        bindkey(%names, nqp::base_I(nqp::decont($_), 10), $name);
+                        bindkey(%names, base10_I_decont($_), $name);
                     }
                     %First-point := {};
                     $first-point-cp = Nil;
@@ -508,7 +525,7 @@ sub UnicodeData ( Str $file, Int $less = 0 ) {
             # This only does single points so we use it to improve speed
             apply-hash-to-cp($cp, %hash);
             # Bind the names hash we generate the Unicode Name C data from
-            nqp::bindkey(%names, nqp::base_I(nqp::decont($cp), 10), $name);
+            bindkey(%names, base10_I_decont($cp), $name);
         }
         $num-processed++;
     }
@@ -564,7 +581,12 @@ sub apply-pv-to-range (Str $range-str, Str $pname, $value) {
 }
 sub apply-pv-to-cp (Int $cp, Str $pname, $value) {
     if %points{$cp}{$pname}:exists {
-        say "Pname $pname for cp $cp already exists: '{%points{$cp}{$pname}}'";
+        return if %points{$cp}{$pname} eqv $value;
+        my $var = %points{$cp}{$pname};
+        say "Pname $pname for cp $cp already exists: '$var'";
+        say "Tried to replace with $value";
+        exit;
+        %points{$cp}{$pname}:delete;
     }
     %points{$cp}{$pname} = $value;
 }
@@ -576,12 +598,12 @@ sub apply-hash-to-cp (Int $cp, Hash $hashy) {
     }
     # Otherwise we need to go through all the keys and apply them all
     for $hashy.keys -> $key {
-        if !defined %points{$cp}{$key} {
+        if %points{$cp}{$key}:!exists {
             %points{$cp}{$key} = $hashy{$key};
         }
         else {
             for $hashy{$key}.keys -> $key2 {
-                if !defined %points{$cp}{$key}{$key2} {
+                if %points{$cp}{$key}{$key2}:!exists {
                     if $key2 ~~ Int or $key2 ~~ Bool {
                         %points{$cp}{$key}:delete;
                         %points{$cp}{$key} = $hashy{$key};
@@ -606,12 +628,14 @@ sub get-full-pvalue (Str $prop is copy, Str $pvalue) {
         return %PropertyValueAliases_to{$prop}{$pvalue};
     }
     else {
-        warn "Could not find “$pvalue” in property “$prop” in " ~
-             '%PropertyValueAliases_to hash'
-             if $prop ne @non-official-properties.any;
-        if %PropertyValueAliases_to{$prop}:exists {
+        if $prop ne @non-official-properties.any and
+        # Names without Jamo_Short_Name have no value
+        !($prop eq 'Jamo_Short_Name' and $pvalue eq '') {
+            warn "Could not find “$pvalue” in property “$prop” in " ~
+                '%PropertyValueAliases_to hash';
             note "\%PropertyValueAliases_to\{$prop\}: " ~
-                Dump %PropertyValueAliases_to{$prop};
+                Dump %PropertyValueAliases_to{$prop}
+                if %PropertyValueAliases_to{$prop}:exists;
         }
     }
     $pvalue;
@@ -677,7 +701,7 @@ sub make-point-index (:$less) {
     my int $bin-index_i = nqp::unbox_i($bin-index);
     my $t1 = now;
     nqp::while( nqp::isle_i($i, $point-max), (
-        my $point_s := nqp::base_I($i, 10);
+        my $point_s := base10_I($i);
         nqp::if(nqp::existskey(%point-index, $point_s),
             # if
             nqp::push_s($mapping, atkey(%point-index, $point_s)),
@@ -781,7 +805,7 @@ sub make-bitfield-rows {
             nqp::bindkey(%point-index, $point, nqp::atkey(%bitfield-rows-seen, $bitfield-rows-str))
         ),
         (
-            my $bin-index_s := nqp::base_I(++$bin-index, 10);
+            my $bin-index_s := base10_I(++$bin-index);
             # Bind it to the bitfield rows hash
             nqp::bindkey(%bitfield-rows-seen, $bitfield-rows-str, $bin-index_s);
             # Bind the point index so we know where in the bitfield this point is located
