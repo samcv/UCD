@@ -1,8 +1,7 @@
 #!/usr/bin/env perl6
-use MONKEY-TYPING;
 use experimental :macros;
-use JSON::Fast;
 use nqp;
+use JSON::Fast;
 use Data::Dump;
 use lib 'lib';
 use UCDlib;
@@ -49,6 +48,88 @@ my %PropertyValueAliases_to;
 my %missing;
 constant $missing-str = '# @missing';
 constant @gc = 'General_Category_1', 'General_Category_2';
+my %point-to-struct;
+my %bitfields;
+my %point-index = nqp::hash;
+my $debug-global = False;
+my $less-global;
+my int $bin-index = -1;
+my $indent = ' ' x 4;
+
+sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0,
+           Bool :$debug = False, Bool :$names-only = False, Bool :$no-UnicodeData = False,
+           Str :$only? ) {
+    $debug-global = $debug;
+    $less-global = $less;
+    start-routine();
+    PNameAliases("PropertyAliases", %PropertyNameAliases, %PropertyNameAliases_to);
+    PValueAliases("PropertyValueAliases", %PropertyValueAliases, %PropertyValueAliases_to);
+    timer('UnicodeData');
+    UnicodeData("UnicodeData", $less, $no-UnicodeData);
+    timer('UnicodeData');
+
+    unless $names-only {
+        constant @enum-data =
+            (1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth'),
+            (1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType'),
+            (1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty'),
+            (1, '', 'Jamo_Short_Name', 'Jamo'),
+            (1, 'L', 'Bidi_Class', 'extracted/DerivedBidiClass'),
+            (1, 'No_Joining_Group', 'Joining_Group', 'extracted/DerivedJoiningGroup'),
+            (1, 'Non_Joining', 'Joining_Type', 'extracted/DerivedJoiningType'),
+            (1, 'Other', 'Word_Break', 'auxiliary/WordBreakProperty'),
+            (1, 'XX', 'Line_Break', 'LineBreak');
+        constant @bin-data =
+            (1, 'extracted/DerivedBinaryProperties'),
+            (1, 'PropList'),
+            (1, 'emoji/emoji-data'),
+            (1, 'DerivedCoreProperties'),
+            (1, "DerivedNormalizationProps");
+        if $less {
+            my $head = $less ?? 3 !! Inf;
+            enumerated-property(|$_) for @enum-data.pick($head);
+            binary-property( |$_ ) for @bin-data.pick($head);
+        }
+        elsif $only {
+            if @enum-data.first({ $_[2] eq $only }) {
+                enumerated-property( |@enum-data.first({ $_[2] eq $only }) )
+            }
+            elsif @bin-data.first({ $_[1] }) {
+                binary-property(|@bin-data.first({ $_[1] }))
+            }
+            else {
+                die "Can't find property '$only'"
+            }
+        }
+        else {
+            enumerated-property( |$_ ) for @enum-data;
+            binary-property( |$_ ) for @bin-data;
+            DerivedNumericValues('extracted/DerivedNumericValues');
+        }
+        tweak_nfg_qc();
+        say now - INIT now;
+    }
+    unless $nomake {
+        dump-json($dump);
+        write-file('names.c', Generate_Name_List()) unless $no-UnicodeData;
+        my $int-main;
+        if $less == 0 {
+            $int-main = slurp-snippets("bitfield", "int-main");
+        }
+        else {
+            $int-main = slurp-snippets("bitfield", "int-main", -2);
+        }
+        unless $names-only {
+            my $bitfield_c = [~] slurp-snippets("bitfield", "header"),
+                make-enums(), make-bitfield-rows(), make-point-index(),
+                $int-main;
+            note "Saving bitfield.c…";
+            write-file('bitfield.c', $bitfield_c);
+            write-file('bitfield.h', @bitfield-h.join("\n"));
+        }
+    }
+    say "Took {now - INIT now} seconds.";
+}
 sub missing (Str $line is copy) {
     # @missing: 0000..10FFFF; cjkAccountingNumeric; NaN
     die unless $line.starts-with($missing-str);
@@ -137,13 +218,6 @@ sub PNameAliases (Str $filename, %aliases, %aliases_to?) {
         }
     }
 }
-my %point-to-struct;
-my %bitfields;
-my %point-index = nqp::hash;
-my $debug-global = False;
-my $less-global;
-my int $bin-index = -1;
-my $indent = "\c[SPACE]" x 4;
 sub write-file ( Str $filename is copy, Str $text ) {
     $filename ~~ s/ ^ \W //;
     my $file = "$build-folder/$filename";
@@ -157,61 +231,6 @@ sub start-routine {
         say "Creating $build-folder because it does not already exist.";
         mkdir $build-folder;
     }
-}
-sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0,
-           Bool :$debug = False, Bool :$names-only = False, Bool :$no-UnicodeData ) {
-    $debug-global = $debug;
-    $less-global = $less;
-    start-routine();
-    PNameAliases("PropertyAliases", %PropertyNameAliases, %PropertyNameAliases_to);
-    PValueAliases("PropertyValueAliases", %PropertyValueAliases, %PropertyValueAliases_to);
-    timer('UnicodeData');
-    UnicodeData("UnicodeData", $less, $no-UnicodeData);
-    timer('UnicodeData');
-
-    unless $names-only {
-        constant @enum-data =
-            (1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth'),
-            (1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType'),
-            (1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty'),
-            (1, '', 'Jamo_Short_Name', 'Jamo'),
-            (1, 'L', 'Bidi_Class', 'extracted/DerivedBidiClass'),
-            (1, 'No_Joining_Group', 'Joining_Group', 'extracted/DerivedJoiningGroup'),
-            (1, 'Non_Joining', 'Joining_Type', 'extracted/DerivedJoiningType'),
-            (1, 'Other', 'Word_Break', 'auxiliary/WordBreakProperty'),
-            (1, 'Unknown', 'Line_Break', 'LineBreak');
-        constant @bin-data =
-            (1, 'extracted/DerivedBinaryProperties'),
-            (1, 'PropList'),
-            (1, 'emoji/emoji-data'),
-            (1, 'DerivedCoreProperties'),
-            (1, "DerivedNormalizationProps");
-        my $head = $less ?? 3 !! Inf;
-        enumerated-property(|$_) for @enum-data.pick($head);
-        binary-property(|$_) for @bin-data.pick($head);
-        DerivedNumericValues('extracted/DerivedNumericValues');
-        tweak_nfg_qc();
-    }
-    dump-json($dump);
-    write-file('names.c', Generate_Name_List()) unless $no-UnicodeData;
-    unless $nomake {
-        my $int-main;
-        if $less == 0 {
-            $int-main = slurp-snippets("bitfield", "int-main");
-        }
-        else {
-            $int-main = slurp-snippets("bitfield", "int-main", -2);
-        }
-        unless $names-only {
-            my $bitfield_c = [~] slurp-snippets("bitfield", "header"),
-                make-enums(), make-bitfield-rows(), make-point-index(),
-                $int-main;
-            note "Saving bitfield.c…";
-            write-file('bitfield.c', $bitfield_c);
-            write-file('bitfield.h', @bitfield-h.join("\n"));
-        }
-    }
-    say "Took {now - INIT now} seconds.";
 }
 sub Generate_Name_List {
     my $t0_nl = now;
@@ -338,8 +357,8 @@ sub enumerated-property ( Int $column, $negname, Str $propname, Str $filename ) 
     for slurp-lines($filename) {
         next if skip-line($_);
         my @parts = .split-trim([';','#'], $column + 2);
-        my $range = @parts[0];
         my $prop-val = @parts[$column];
+        my $range = @parts.shift;
         bindkey(%seen-value, $prop-val, True);
         apply-pv-to-range($range, $propname, $prop-val);
     }
@@ -440,7 +459,6 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
                 bindkey($h, @gc[1], %hash{@gc[1]});
                 bindkey(%seen-gc, $gencat, $h);
             }
-            bindkey(%hash, 'gencat', $gencat);
         }
         if $ccclass {
             bindkey(%seen-ccc, $ccclass, True);
@@ -475,19 +493,20 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
                 my $t9 = now;
                 $name ~~ s/', Last>'$/>/;
                 if %First-point {
-                    #die "\%First-point: " ~ %First-point.gist ~ "\%hash: " ~ %hash.gist if %First-point !eqv %hash;
                     # This function can work on ranges
                     for Range.new($first-point-cp, $cp) {
-                        apply-hash-to-cp($_, %hash);
+                        # We need to duplicate the hash so each cp hash a new hash
+                        my %new-hash = %hash;
+                        apply-hash-to-cp($_, %new-hash);
                         @timers.push(now) if $num-processed++ %% 500;
                     }
-                    say "Found Range in UnicodeData: $first-point-cp..$cp";
+                    #say "Found Range in UnicodeData: $first-point-cp..$cp";
                     for $first-point-cp..$cp {
                         bindkey(%names, base10_I_decont($_), $name);
                     }
                     %First-point := {};
                     $first-point-cp = Nil;
-                    say "Took ", now - $t9, " seconds to process this range";
+                    #say "Took ", now - $t9, " seconds to process this range";
                     next;
                 }
                 else {
@@ -497,7 +516,6 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
             elsif $name.ends-with(', First>') {
                 $first-point-cp = $cp;
                 $name ~~ s/', First>'$/>/;
-                say "Found first point of range $name cp: $cp";
                 %First-point = %hash;
                 next;
             }
@@ -523,7 +541,7 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
     my @a = gather {
         take @timers[$_ + 1] - @timers[$_] for ^@timers.end;
     }
-    say join("\n", '=' x 20, @a.join(','), '=' x 20) if @a;
+    say join("\n", '=' x 20, @a.join(','), '=' x 20) if @a and $debug-global;
     set-pvalue-seen("Canonical_Combining_Class", 0, %seen-ccc);
 }
 sub set-pvalue-seen (Str:D $property, $negname, %hash) {
@@ -537,7 +555,8 @@ sub apply-hash-to-range (Str $range-str, Hash $hashy) {
     my @items = $range-str.split('..').map( { hex $_ } );
     if @items.elems == 2 {
         for Range.new( @items[0], @items[1] ) -> $cp {
-            apply-hash-to-cp($cp, $hashy);
+            my $new-hashy = $hashy;
+            apply-hash-to-cp($cp, $new-hashy);
         }
     }
     # Otherwise there's only one point
@@ -550,29 +569,41 @@ sub apply-hash-to-range (Str $range-str, Hash $hashy) {
 }
 sub apply-pv-to-range (Str $range-str, Str $pname, $value) {
     # If it contains `..` then it is a range
-    my @items = $range-str.split('..').map( { hex $_ } );
+    my Int @items = $range-str.split('..').map( { hex $_ } );
+    my $range;
     if @items.elems == 2 {
-        for Range.new( @items[0], @items[1] ) -> $cp {
-            apply-pv-to-cp($cp, $pname, $value);
-        }
+        $range = Range.new( @items[0], @items[1] );
     }
-    # Otherwise there's only one point
     elsif @items.elems == 1 {
-        apply-pv-to-cp(@items[0], $pname, $value);
+        $range = @items[0];
     }
     else {
         die "Unknown range '$range-str'";
+        return False;
     }
+    die $range unless $range ~~ any(Range, Int);
+    for $range.list -> $cp {
+        #say $cp.fmt("apply-pv-to-range R cp: %X") if issue-prop($pname);
+        apply-pv-to-cp($cp, $pname, $value);
+    }
+    return True;
 }
 sub apply-pv-to-cp (Int $cp, Str $pname, $value) {
+    #dump %points{0xAC01} if $cp == 0xAC00;
+    #dump %points{0xAC00} if $cp == 0xAC00;
+    #say $cp.fmt("apply-pv-to-cp cp: %X") if issue-prop($pname);
     if %points{$cp}{$pname}:exists {
         return if %points{$cp}{$pname} eqv $value;
         my $var = %points{$cp}{$pname};
-        say "Pname $pname for cp $cp already exists: '$var' ",
-            "Tried to replace with $value";
+        die "Pname $pname for cp {$cp.base(16)} already exists: '$var' ",
+            "Tried to replace with $value ", Dump %points{$cp};
         %points{$cp}{$pname}:delete;
     }
+    #say '%points{', $cp, '}:  ', Dump %points{$cp};
     %points{$cp}{$pname} = $value;
+    #dump %points{0xAC01} if $cp == 0xAC00;
+    #dump %points{0xAC00} if $cp == 0xAC00;
+
 }
 sub apply-hash-to-cp (Int $cp, Hash $hashy) {
     my $cp_s := base10_I($cp);
@@ -812,12 +843,12 @@ sub make-bitfield-rows {
 sub dump-json ( Bool $dump ) {
     note "Converting data to JSON...";
     if $dump {
-        write-file(%points.VAR.name ~ '.json',  to-json(%points));
-        write-file(%decomp_spec.VAR.name ~ '.json',  to-json(%decomp_spec));
+        write-file(%points.VAR.name ~ '.Dump.p6',  Dump %points);
+        write-file(%decomp_spec.VAR.name ~ '.Dump.p6',  Dump %decomp_spec);
     }
     for %binary-properties, %PropertyValueAliases,
        %PropertyNameAliases, %PropertyNameAliases_to, %PropertyValueAliases_to {
-        write-file(.VAR.name ~ '.json', to-json($_));
+        write-file(.VAR.name ~ '.Dump.p6', Dump $_);
     }
     write-file(%enum-staging.VAR.name ~ '.txt', Dump %enum-staging);
 }
