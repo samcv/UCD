@@ -4,19 +4,14 @@ use nqp;
 use JSON::Fast;
 use Data::Dump;
 use lib 'lib';
-use UCDlib;
-use ArrayCompose;
-use Set-Range;
-use seenwords;
-use EncodeBase40;
-use Operators;
-use BitfieldPacking;
+use UCDlib; use ArrayCompose; use Set-Range;
+use seenwords; use EncodeBase40; use Operators;
+use BitfieldPacking; use bitfield-rows-switch;
 INIT say "Starting…";
 constant $build-folder = "source";
 constant $snippets-folder = "snippets";
 # stores lines of bitfield.h
 our @bitfield-h;
-our %enum-staging;
 sub timer (Str $name = '') {
     state %timers;
     push %timers{$name}, now;
@@ -66,6 +61,7 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0,
     PValueAliases("PropertyValueAliases", %PropertyValueAliases, %PropertyValueAliases_to);
     timer('UnicodeData');
     UnicodeData("UnicodeData", $less, $no-UnicodeData);
+    die Dump %points unless %points{0}:exists;
     timer('UnicodeData');
 
     unless $names-only {
@@ -85,20 +81,22 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0,
             (1, 'emoji/emoji-data'),
             (1, 'DerivedCoreProperties'),
             (1, "DerivedNormalizationProps");
-        if $less {
-            my $head = $less ?? 3 !! Inf;
-            enumerated-property(|$_) for @enum-data.pick($head);
-            binary-property( |$_ ) for @bin-data.pick($head);
+        if $less and !$only {
+            #my $head = $less ?? 1 !! Inf;
+            enumerated-property(|@enum-data[0]);
+            binary-property(|@bin-data[0]);
         }
         elsif $only {
-            if @enum-data.first({ $_[2] eq $only }) {
+            if $only eq 'UnicodeData' {
+            }
+            elsif @enum-data.first({ $_[2] eq $only }) {
                 enumerated-property( |@enum-data.first({ $_[2] eq $only }) )
             }
             elsif @bin-data.first({ $_[1] }) {
                 binary-property(|@bin-data.first({ $_[1] }))
             }
             else {
-                die "Can't find property '$only'"
+                die "Can't find property '$only'";
             }
         }
         else {
@@ -106,11 +104,10 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0,
             binary-property( |$_ ) for @bin-data;
             DerivedNumericValues('extracted/DerivedNumericValues');
         }
-        tweak_nfg_qc();
+        tweak_nfg_qc() unless $less;
         say now - INIT now;
     }
     unless $nomake {
-        dump-json($dump);
         write-file('names.c', Generate_Name_List()) unless $no-UnicodeData;
         my $int-main;
         if $less == 0 {
@@ -129,6 +126,7 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0,
         }
     }
     say "Took {now - INIT now} seconds.";
+    dump-json($dump);
 }
 sub missing (Str $line is copy) {
     # @missing: 0000..10FFFF; cjkAccountingNumeric; NaN
@@ -341,12 +339,12 @@ sub binary-property ( Int $column, Str $filename ) {
     register-binary-property(%props-seen.keys.sort);
 }
 sub get-pvalue-seen (Str $property, $negname) {
-    if %enum-staging{$property}:exists {
-        return %enum-staging{$property};
+    if %enumerated-properties{$property}:exists {
+        return %enumerated-properties{$property};
     }
     else {
-        %enum-staging{$property} = pvalue-seen.new(negname => $negname);
-        return %enum-staging{$property};
+        %enumerated-properties{$property} = pvalue-seen.new(negname => $negname);
+        return %enumerated-properties{$property};
     }
 }
 sub enumerated-property ( Int $column, $negname, Str $propname, Str $filename ) {
@@ -374,7 +372,7 @@ sub register-binary-property (+@names) {
         }
         %binary-properties{$name} = name => $name, bitwidth => 1;
     }
-    note "registering @names.join(', ') binary properties";
+    note "Registering binary properties: @names.join(', ')";
 }
 sub compute-bitwidth ( Int $max ) { ($max - 1).base(2).chars }
 sub tweak_nfg_qc {
@@ -520,17 +518,15 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
                 next;
             }
         }
-        else {
-            # This only does single points so we use it to improve speed
-            apply-hash-to-cp($cp, %hash);
-            # Bind the names hash we generate the Unicode Name C data from
-            bindkey(%names, base10_I_decont($cp), $name);
-            @timers.push(now) if $num-processed++ %% 500;
-        }
+        apply-hash-to-cp($cp, %hash);
+        # This only does single points so we use it to improve speed
+        # Bind the names hash we generate the Unicode Name C data from
+        bindkey(%names, base10_I_decont($cp), $name);
+        @timers.push(now) if $num-processed++ %% 500;
     }
     my $time-took = now - $t1;
     say "Took $time-took secs to process $num-processed and ",
-        ($time-took/$num-processed * 1000).fmt("%.4f"), " ms/line";
+        ($time-took/($num-processed or 1) * 1000).fmt("%.4f"), " ms/line";
     my $gc_0-seen = get-pvalue-seen(@gc[0], '');
     my $gc_1-seen = get-pvalue-seen(@gc[1], '');
     for %seen-gc.keys {
@@ -606,23 +602,21 @@ sub apply-pv-to-cp (Int $cp, Str $pname, $value) {
 
 }
 sub apply-hash-to-cp (Int $cp, Hash $hashy) {
-    my $cp_s := base10_I($cp);
     # Fast path in case cp doesn't exist yet
-    if !existskey(%points, $cp_s) {
-        bindkey(%points, $cp_s, $hashy);
-        #%points{$cp} = $hashy;
-        return;
-    }
+    existskey(%points, $cp.Str) ?? apply-hash-to-cp-full($cp, $hashy)
+    !! bindkey(%points, $cp.Str, $hashy);
+}
+sub apply-hash-to-cp-full (Int $cp, Hash $hashy) {
     # Otherwise we need to go through all the keys and apply them all
     for $hashy.keys -> $key {
-        if %points{$cp_s}{$key}:!exists {
-            %points{$cp_s}{$key} = $hashy{$key};
+        if %points{$cp}{$key}:!exists {
+            %points{$cp}{$key} = $hashy{$key};
         }
         else {
             for $hashy{$key}.keys -> $key2 {
                 if $key2 ~~ Int or $key2 ~~ Bool {
-                    %points{$cp_s}{$key}:delete;
-                    %points{$cp_s}{$key} = $hashy{$key};
+                    %points{$cp}{$key}:delete;
+                    %points{$cp}{$key} = $hashy{$key};
                 }
                 else {
                     die "Don't know how to apply type {$key2.WHAT} in apply-hash-to-cp";
@@ -666,10 +660,10 @@ sub get-full-propname (Str $prop) returns Str {
 sub make-enums {
     note "Making enums…";
     my @enums;
-    for %enum-staging.keys.sort({$^a unicmp $^b}) -> $prop {
-        my $obj = %enum-staging{$prop};
+    for %enumerated-properties.keys.sort({$^a unicmp $^b}) -> $prop {
+        my $obj = %enumerated-properties{$prop};
         my $full-prop-name = get-full-propname($prop);
-        say "make-enums prop[$prop] fullname [$full-prop-name]";
+        say "make-enums prop[$prop] fullname [$full-prop-name]" if $debug-global;
         die if $prop ne $full-prop-name;
         my $type = $obj.type;
         my %enum = $obj.build;
@@ -703,35 +697,101 @@ sub make-enums {
 }
 sub make-point-index (:$less) {
     note "Making point_index…\n";
-    my int $point-max = %points.keys.sort(-*)[0].Int;
-    say "point-max $point-max";
+    my %points-ranges = get-points-ranges(%point-index);
+    say "Done computing point_index ranges";
+    my $dump-count = 0;
+    say '=' x 20;
+    for %points-ranges.keys.sort(*.Int) {
+        say $_, " => ", %points-ranges{$_}.perl;
+        last if $dump-count++ > 20;
+    }
+    #say '=' x 20;
+    my Int $point-max = %points.keys.sort(-*)[0].Int;
+    #say "point-max $point-max";
     my $type = compute-type($bin-index + 1);
-    my $mapping := nqp::list_s;
+    #my $mapping := nqp::list_s;
+    #`{{
+    my int $bin-index_i = nqp::unbox_i($bin-index);
     my $mapping_rows := nqp::list_s;
     my @rows;
     my $i := nqp::add_i(0, 0);
-    my int $bin-index_i = nqp::unbox_i($bin-index);
-    my $t1 = now;
-    nqp::while( nqp::isle_i($i, $point-max), (
+    for 0..$point-max -> $i {
         my $point_s := base10_I($i);
-        nqp::if(nqp::existskey(%point-index, $point_s),
+        nqp::if(existskey(%point-index, $point_s),
             # if
             nqp::push_s($mapping, atkey(%point-index, $point_s)),
             # XXX for now let's denote things that have no value with 1 more than max index
             # else
-            nqp::push_s($mapping, atkey(%point-index, nqp::add_i($bin-index_i, 1))) # -1 represents NULL
+            nqp::push_s($mapping, atkey(%point-index, nqp::add_i($bin-index_i, 1)))
         );
-        $i := nqp::add_i($i, 1);
-      )
-    );
-    my $string = nqp::join(",", $mapping);
+    }
+    }}
+    my $t1 = now;
+    my Cool:D @mapping;
+    my @range-str;
+    my $min-elems = 10;
+    @range-str.append: 'int get_bitfield_offset (uint32_t cp) {',
+        '#define BITFIELD_DEFAULT ' ~ $bin-index + 1, 'int return_val = cp;';
+    my $indent = '';
+    my $tabstop = ' ';
+    for %points-ranges.sort(*.key.Int) {
+        my $range-no = .key;
+        my $range = .value;
+        say "range-no ", $range-no;
+        say "range[0] ", $range[0];
+        my $diff = $range[*-1] - $range[0];
+        if %point-index{$range[0]}:exists {
+            if $range.elems > $min-elems {
+                @range-str.push: $indent ~ 'if (cp >= ' ~ $range[0] ~ ') {';
+                $indent ~= $tabstop;
+                @range-str.push( $indent ~ 'return_val -= ' ~ $diff ~ ';') unless $diff == 0;
+                @range-str.push: $indent ~ 'if (cp <= ' ~ $range[*-1] ~ ')';
+                @range-str.push: $indent ~ $tabstop ~ 'return ' ~ %point-index{$range[0]} ~ ';';
+            }
+            else {
+                my $point-index-var = %point-index{$range[0]};
+                for ^$range.elems {
+                    #die "point-index-var: $point-index-var, point-index\{$range\[$_\]\}: {%point-index{$range[$_]}}"
+                    #    if $point-index-var != %point-index{$range[$_]};
+                    #dump $range-no;
+                    #dump $range;
+                    say '$range[', $_, ']: ', $range[$_], ' %point-index{', $range[$_], '}: ', %point-index{$range[$_]}.perl;
+                    @mapping.push: %point-index{$range[$_]} - 1;
+                }
+            }
+        }
+        else {
+            if $range.elems > $min-elems {
+                #say "donet exist";
+                @range-str.push: $indent ~ 'if (cp >= ' ~ $range[0] ~ ') {';
+                $indent ~= $tabstop;
+                @range-str.push( $indent ~ 'return_val -= ' ~ $diff ~ ';') unless $diff == 0;
+                @range-str.push: $indent ~ 'if (cp <= ' ~ $range[*-1] ~ ')';
+                @range-str.push: $indent ~ $tabstop ~ 'return BITFIELD_DEFAULT;';
+            }
+            else {
+                for ^$range.elems {
+                    @mapping.push($bin-index + 1)
+                }
+            }
+        }
+    }
+    while $indent.chars {
+        say "indent is ", $indent.chars;
+        @range-str.push: $indent ~ '}';
+        $indent = ' ' x ($indent.chars - $tabstop.chars);
+    }
+    @range-str.push: 'return return_val;';
+    @range-str.push: '}' ~ "\n";
+    #say "Range str: ", @range-str.join("\n");
+
+    my $string = @mapping.join(',');
     my int $chars = nqp::chars($string);
-    say "Adding nowlines every 70-79 chars";
-    # XXX can use .split-into-lines here
-    $string ~~ s:g/(.**70..79',')/$0\n/;
+    say "Adding newlines every 70-79 chars";
+    $string .= break-into-lines(',');
     say now - $t1 ~ "Took this long to concat points";
-    my $mapping-str = ("#define max_bitfield_index $point-max\n$type point_index[", $point-max + 1, "] = \{\n    ", $string, "\n\};\n").join;
-    $mapping-str;
+    my $mapping-str = ("#define max_bitfield_index $point-max\n$type point_index[", @mapping.elems, "] = \{\n    ", $string, "\n\};\n").join;
+    $mapping-str ~ @range-str.join("\n");
 }
 sub make-bitfield-rows {
     note "Making bitfield-rows…";
@@ -746,17 +806,17 @@ sub make-bitfield-rows {
         @list-for-packing.push($bin => 1);
     }
     my $enum-prop-nqp := nqp::hash;
-    for %enum-staging.sort({ $^a.key unicmp $^b.key }) {
+    for %enumerated-properties.sort({ $^a.key unicmp $^b.key }) {
         @list-for-packing.push(.key => .value.bitwidth);
     }
     my @packed-enums = compute-packing(@list-for-packing);
     say "Packed-enums: ", @packed-enums.perl;
     for @packed-enums.».key -> $property {
         my $bitwidth;
-        if %enum-staging{$property}:exists {
-            $bitwidth = %enum-staging{$property}.bitwidth;
+        if %enumerated-properties{$property}:exists {
+            $bitwidth = %enumerated-properties{$property}.bitwidth;
             my $this-prop := nqp::hash;
-            my $built = %enum-staging{$property}.build;
+            my $built = %enumerated-properties{$property}.build;
             for $built.kv -> $key, $value {
                 my $type = $value.^name;
                 die if $type ne 'Str';
@@ -850,5 +910,5 @@ sub dump-json ( Bool $dump ) {
        %PropertyNameAliases, %PropertyNameAliases_to, %PropertyValueAliases_to {
         write-file(.VAR.name ~ '.Dump.p6', Dump $_);
     }
-    write-file(%enum-staging.VAR.name ~ '.txt', Dump %enum-staging);
+    write-file(%enumerated-properties.VAR.name ~ '.Dump.p6', Dump %enumerated-properties);
 }

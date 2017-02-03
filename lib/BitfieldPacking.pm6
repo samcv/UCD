@@ -7,7 +7,7 @@ sub num-remain (%h) {
 sub exists-and-elems ( %h, $key ) {
     %h{$key}:exists and %h{$key}.elems;
 }
-sub compute-packing ( @list where { .all ~~ Pair } ) is export {
+sub compute-packing ( @list where { .all ~~ Pair and $_.».value.all ~~ Int } ) is export {
     say "Received list: ", @list.perl if $debug;
     my @result;
     my $i = 0;

@@ -67,17 +67,7 @@ sub Dump-Range ( Range $range, Hash $hashy ) is export {
         say Dump($hashy{$point}) if $hashy{$point}:exists;
     }
 }
-sub reverse-hash-int-only ( Hash $hash ) is export {
-    my %new-hash{Int};
-    for $hash.keys {
-        %new-hash{$hash{$_}} = $_ if $hash{$_} ~~ Int and $_ ne any('bitwidth', 'name');
-    }
-    return %new-hash;
-}
-sub get-prefix is export {
-    $prefix;
-}
-proto sub compute-type (|) { * }
+sub get-prefix is export { $prefix }
 multi sub compute-type ( Str $str ) {
     if $str eq 'char *' {
         return $prefix ~ 'char *';
