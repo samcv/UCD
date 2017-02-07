@@ -1,5 +1,5 @@
 #!/usr/bin/env perl6
-use experimental :macros;
+use experimental :macros, :collation;
 use nqp;
 use JSON::Fast;
 use Data::Dump;
@@ -20,11 +20,6 @@ sub timer (Str $name = '') {
     }
 }
 macro dump($x) { quasi { say {{{$x}}}.VAR.name, ": ", Dump {{{$x}}} } };
-sub infix:<unicmp>(\a, \b) returns Order:D {
-    ORDER(
-        nqp::unicmp_s(
-            nqp::unbox_s(a), nqp::unbox_s(b), 7,0,0))
-}
 my %points = nqp::hash; # Stores all the cp's property values of all types
 my %names = nqp::hash; # Unicode Name hash for generating the name table
 my %binary-properties; # Stores the binary property names
@@ -108,7 +103,6 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0,
         say now - INIT now;
     }
     unless $nomake {
-        write-file('names.c', Generate_Name_List()) unless $no-UnicodeData;
         my $int-main;
         if $less == 0 {
             $int-main = slurp-snippets("bitfield", "int-main");
@@ -124,6 +118,7 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0,
             write-file('bitfield.c', $bitfield_c);
             write-file('bitfield.h', @bitfield-h.join("\n"));
         }
+        write-file('names.c', Generate_Name_List()) unless $no-UnicodeData;
     }
     say "Took {now - INIT now} seconds.";
     dump-json($dump);
@@ -168,7 +163,7 @@ class pvalue-seen {
         $!bitwidth;
     }
     method bin-seen-keys {
-        %!seen-values.sort.keys;
+        %!seen-values.sort(&[unicmp]).keys;
     }
     method saw ($saw) {
         %!seen-values{$saw} = True unless %!seen-values{$saw}:exists;
@@ -183,7 +178,7 @@ class pvalue-seen {
             if $!type eq 'Str' {
                 %!enum{$!negname} = ($number++).Str;
                 %!seen-values{$!negname}:delete;
-                for %!seen-values.keys.sort {
+                for %!seen-values.keys.sort(&[unicmp]) {
                     %!enum{$_} = ($number++).Str;
                 }
             }
@@ -336,7 +331,7 @@ sub binary-property ( Int $column, Str $filename ) {
         %props-seen{$property} = True unless %props-seen{$property};
         apply-pv-to-range(@parts[0], @parts[$column], True);
     }
-    register-binary-property(%props-seen.keys.sort);
+    register-binary-property(%props-seen.keys.sort(&[unicmp]));
 }
 sub get-pvalue-seen (Str $property, $negname) {
     if %enumerated-properties{$property}:exists {
@@ -660,7 +655,7 @@ sub get-full-propname (Str $prop) returns Str {
 sub make-enums {
     note "Making enums…";
     my @enums;
-    for %enumerated-properties.keys.sort({$^a unicmp $^b}) -> $prop {
+    for %enumerated-properties.keys.sort(&[unicmp]) -> $prop {
         my $obj = %enumerated-properties{$prop};
         my $full-prop-name = get-full-propname($prop);
         say "make-enums prop[$prop] fullname [$full-prop-name]" if $debug-global;
@@ -700,9 +695,9 @@ sub make-point-index (:$less) {
     my %points-ranges = get-points-ranges(%point-index);
     say "Done computing point_index ranges";
     my $dump-count = 0;
-    say '=' x 20;
+    #say '=' x 20;
     for %points-ranges.keys.sort(*.Int) {
-        say $_, " => ", %points-ranges{$_}.perl;
+        #say $_, " => ", %points-ranges{$_}.perl;
         last if $dump-count++ > 20;
     }
     #say '=' x 20;
@@ -737,37 +732,37 @@ sub make-point-index (:$less) {
     for %points-ranges.sort(*.key.Int) {
         my $range-no = .key;
         my $range = .value;
-        say "range-no ", $range-no;
-        say "range[0] ", $range[0];
+        #say "range-no ", $range-no;
+        #say "range[0] ", $range[0];
         my $diff = $range[*-1] - $range[0];
         if %point-index{$range[0]}:exists {
             if $range.elems > $min-elems {
-                @range-str.push: $indent ~ 'if (cp >= ' ~ $range[0] ~ ') {';
+                @range-str.push( [~] $indent, 'if (cp >= ', $range[0], ') {',
+                ($diff != 0 ?? ' return_val -= ' ~ $diff ~ ';' !! '') );
                 $indent ~= $tabstop;
-                @range-str.push( $indent ~ 'return_val -= ' ~ $diff ~ ';') unless $diff == 0;
-                @range-str.push: $indent ~ 'if (cp <= ' ~ $range[*-1] ~ ')';
-                @range-str.push: $indent ~ $tabstop ~ 'return ' ~ %point-index{$range[0]} ~ ';';
+                @range-str.push: $indent ~ 'if (cp <= ' ~ $range[*-1] ~ ') return ' ~ %point-index{$range[0]} ~ ';';
             }
             else {
                 my $point-index-var = %point-index{$range[0]};
                 for ^$range.elems {
-                    #die "point-index-var: $point-index-var, point-index\{$range\[$_\]\}: {%point-index{$range[$_]}}"
-                    #    if $point-index-var != %point-index{$range[$_]};
-                    #dump $range-no;
-                    #dump $range;
+                    #`｢
+                    die "point-index-var: $point-index-var, point-index\{$range\[$_\]\}: {%point-index{$range[$_]}}"
+                        if $point-index-var != %point-index{$range[$_]};
+                    dump $range-no;
+                    dump $range;
                     say '$range[', $_, ']: ', $range[$_], ' %point-index{', $range[$_], '}: ', %point-index{$range[$_]}.perl;
-                    @mapping.push: %point-index{$range[$_]} - 1;
+                    #`｣
+                    @mapping.push: %point-index{ $range[$_] };
                 }
             }
         }
         else {
             if $range.elems > $min-elems {
                 #say "donet exist";
-                @range-str.push: $indent ~ 'if (cp >= ' ~ $range[0] ~ ') {';
+                @range-str.push( [~] $indent, 'if (cp >= ', $range[0], ') {',
+                ($diff != 0 ?? ' return_val -= ' ~ $diff ~ ';' !! '') );
                 $indent ~= $tabstop;
-                @range-str.push( $indent ~ 'return_val -= ' ~ $diff ~ ';') unless $diff == 0;
-                @range-str.push: $indent ~ 'if (cp <= ' ~ $range[*-1] ~ ')';
-                @range-str.push: $indent ~ $tabstop ~ 'return BITFIELD_DEFAULT;';
+                @range-str.push: $indent ~ 'if (cp <= ' ~ $range[*-1] ~ ') return BITFIELD_DEFAULT;';
             }
             else {
                 for ^$range.elems {
@@ -777,7 +772,6 @@ sub make-point-index (:$less) {
         }
     }
     while $indent.chars {
-        say "indent is ", $indent.chars;
         @range-str.push: $indent ~ '}';
         $indent = ' ' x ($indent.chars - $tabstop.chars);
     }
@@ -802,7 +796,7 @@ sub make-bitfield-rows {
     my $bin-prop-nqp := nqp::hash;
     my @list-for-packing;
 
-    for %binary-properties.keys.sort -> $bin {
+    for %binary-properties.keys.sort(&[unicmp]) -> $bin {
         @list-for-packing.push($bin => 1);
     }
     my $enum-prop-nqp := nqp::hash;

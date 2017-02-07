@@ -79,4 +79,3 @@ sub test-it {
     say now - INIT now;
 
 }
-test-it;
