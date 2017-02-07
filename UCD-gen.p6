@@ -470,7 +470,7 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
         %hash<NFC_QC>  = True;
         %hash<NFKD_QC> = True;
         %hash<NFG_QC>  = True;
-        )
+        #`)
         bindkey(%hash, 'Any', True);
         bindkey(%hash, 'Bidi_Mirrored', True) if starts-with($bidimirrored, 'Y');
 
