@@ -745,13 +745,13 @@ sub make-point-index (:$less) {
             else {
                 my $point-index-var = %point-index{$range[0]};
                 for ^$range.elems {
-                    #`｢
+                    #`(
                     die "point-index-var: $point-index-var, point-index\{$range\[$_\]\}: {%point-index{$range[$_]}}"
                         if $point-index-var != %point-index{$range[$_]};
                     dump $range-no;
                     dump $range;
                     say '$range[', $_, ']: ', $range[$_], ' %point-index{', $range[$_], '}: ', %point-index{$range[$_]}.perl;
-                    #`｣
+                    #`)
                     @mapping.push: %point-index{ $range[$_] };
                 }
             }

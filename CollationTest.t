@@ -17,7 +17,8 @@ sub MAIN {
     my $i = 0;
     while (@lines[$i + 1]) {
         unless is-deeply @lines[$i] unicmp @lines[$i + 1], Less, "@lines[$i] unicmp @lines[$i + 1]" {
-            @failed.push( @lines[$i].ords.fmt("0x%X") ~ ',' ~ @lines[$i + 1].ords.fmt("0x%X") ) unless @lines[$i].ord.uniprop('MVM_COLLATION_QC');
+            @failed.push( @lines[$i].ords.fmt("0x%X") ~ ',' ~ @lines[$i + 1].ords.fmt("0x%X") )
+                unless @lines[$i].ords.any.uniprop('MVM_COLLATION_QC');
         }
         $i++;
         #say "$i";
