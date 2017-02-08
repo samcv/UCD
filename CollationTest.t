@@ -1,9 +1,8 @@
+#!/usr/bin/env perl6
 use Test;
 my Str $folder = "UNIDATA/UCA/CollationTest";
 my IO::Path $file = "$folder/CollationTest_NON_IGNORABLE_SHORT.txt".IO;
 sub MAIN {
-    say is-surrogate(56320);
-    exit;
     die unless $file.f;
     my @failed;
     use experimental :collation;
@@ -18,13 +17,13 @@ sub MAIN {
     my $i = 0;
     while (@lines[$i + 1]) {
         unless is-deeply @lines[$i] unicmp @lines[$i + 1], Less, "@lines[$i] unicmp @lines[$i + 1]" {
-            @failed.push( @lines[$i].ords.fmt("0x%X") ~ ',' ~ @lines[$i + 1].ords.fmt("0x%X") );
+            @failed.push( @lines[$i].ords.fmt("0x%X") ~ ',' ~ @lines[$i + 1].ords.fmt("0x%X") ) unless @lines[$i].ord.uniprop('MVM_COLLATION_QC');
         }
         $i++;
         #say "$i";
     }
-    done-testing;
     ($file.Str ~ '.failed.txt').IO.spurt(@failed.join: "\n");
+    done-testing;
 }
 sub is-surrogate (Int $cp) {
     return True if $cp >= 0xDC00 && $cp <= 0xDFFF; # <Low Surrogate>
