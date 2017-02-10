@@ -278,6 +278,8 @@ sub Generate_Name_List {
     say "Joining codepoints";
     my $t2 = now;
     my $base40-joined = $base40-string.join(',');
+    my $base40-nl-joined = $base40-string.join("\n");
+    spurt "base40-nl.txt", $base40-nl-joined;
     my $t3 = now;
     my $set-rang-func-h = 'uint32_t get_uninames ( char * out, uint32_t cp )';
     my $set-range-func = qq:to/END/;
@@ -347,13 +349,17 @@ sub enumerated-property ( Int $column, $negname, Str $propname, Str $filename ) 
     die $propname unless %PropertyValueAliases{$propname}:exists;
     my Int $i = 0;
     my $t1 = now;
+    my $property-value;
     for slurp-lines($filename) {
         next if skip-line($_);
         my @parts = .split-trim([';','#'], $column + 2);
-        my $prop-val = @parts[$column];
-        my $range = @parts.shift;
-        bindkey(%seen-value, $prop-val, True);
-        apply-pv-to-range($range, $propname, $prop-val);
+        nqp::bind($property-value, @parts[$column]);
+        bindkey(%seen-value, $property-value, True);
+        apply-pv-to-range(
+            @parts[0], # range
+            $propname,
+            $property-value # property value
+        );
     }
     set-pvalue-seen($propname, $negname, %seen-value);
     say "Took {now - $t1} seconds to process $propname enums";
@@ -427,7 +433,6 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
     # and so is the first in a range inside UnicodeData.txt
     my $num-processed = 0;
     my $t1 = now;
-    my @timers;
     for slurp-lines $file {
         next if skip-line($_);
         my @parts = nqp::split(';', $_);
@@ -491,7 +496,6 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
                         # We need to duplicate the hash so each cp hash a new hash
                         my %new-hash = %hash;
                         apply-hash-to-cp($_, %new-hash);
-                        @timers.push(now) if $num-processed++ %% 500;
                     }
                     #say "Found Range in UnicodeData: $first-point-cp..$cp";
                     for $first-point-cp..$cp {
@@ -517,7 +521,6 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
         # This only does single points so we use it to improve speed
         # Bind the names hash we generate the Unicode Name C data from
         bindkey(%names, base10_I_decont($cp), $name);
-        @timers.push(now) if $num-processed++ %% 500;
     }
     my $time-took = now - $t1;
     say "Took $time-took secs to process $num-processed and ",
@@ -529,10 +532,6 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
         $gc_0-seen.saw(@letters[0]);
         $gc_1-seen.saw(@letters[1]);
     }
-    my @a = gather {
-        take @timers[$_ + 1] - @timers[$_] for ^@timers.end;
-    }
-    say join("\n", '=' x 20, @a.join(','), '=' x 20) if @a and $debug-global;
     set-pvalue-seen("Canonical_Combining_Class", 0, %seen-ccc);
 }
 sub set-pvalue-seen (Str:D $property, $negname, %hash) {
@@ -558,40 +557,49 @@ sub apply-hash-to-range (Str $range-str, Hash $hashy) {
         die "Unknown range '$range-str'";
     }
 }
-sub apply-pv-to-range (Str $range-str, Str $pname, $value) {
+sub apply-pv-to-range ($range-str, Str $pname, $value) is raw {
     # If it contains `..` then it is a range
-    my Int @items = $range-str.split('..').map( { hex $_ } );
-    my $range;
-    if @items.elems == 2 {
-        $range = Range.new( @items[0], @items[1] );
+    my \items = $range-str.split('..').map( { hex $_ } );
+    if items[1].defined {
+        for items[0]..items[1] -> $cp {
+            apply-pv-to-cp($cp, $pname, $value);
+        }
     }
-    elsif @items.elems == 1 {
-        $range = @items[0];
+    elsif items[0].defined {
+        apply-pv-to-cp(items[0], $pname, $value);
     }
     else {
         die "Unknown range '$range-str'";
         return False;
     }
-    die $range unless $range ~~ any(Range, Int);
-    for $range.list -> $cp {
-        #say $cp.fmt("apply-pv-to-range R cp: %X") if issue-prop($pname);
-        apply-pv-to-cp($cp, $pname, $value);
-    }
     return True;
 }
-sub apply-pv-to-cp (Int $cp, Str $pname, $value) {
+sub apply-pv-to-cp (int $cp, Str $pname, $value) is raw {
+    my \cp_s = base10_I($cp);
     #dump %points{0xAC01} if $cp == 0xAC00;
     #dump %points{0xAC00} if $cp == 0xAC00;
     #say $cp.fmt("apply-pv-to-cp cp: %X") if issue-prop($pname);
-    if %points{$cp}{$pname}:exists {
-        return if %points{$cp}{$pname} eqv $value;
-        my $var = %points{$cp}{$pname};
-        die "Pname $pname for cp {$cp.base(16)} already exists: '$var' ",
-            "Tried to replace with $value ", Dump %points{$cp};
-        %points{$cp}{$pname}:delete;
+    if !existskey(%points, cp_s) {
+        bindkey(%points, cp_s, nqp::hash);
     }
+    elsif %points{cp_s}{$pname}:exists {
+        return if %points{cp_s}{$pname} eqv $value;
+        my $var = %points{cp_s}{$pname};
+        die "Pname $pname for cp {$cp.base(16)} already exists: '$var' ",
+            "Tried to replace with $value ", Dump %points{cp_s};
+        %points{cp_s}{$pname}:delete;
+    }
+    nqp::bindkey(
+        nqp::decont(
+            nqp::atkey(%points, cp_s
+            )
+        ), $pname, $value
+    );
+    #say %points{$cp}{$pname};
+    #nqp::atkey(%points, $cp, Pair.new($pname, $value));
+    #bindkey(%points, $pname, $value);
     #say '%points{', $cp, '}:  ', Dump %points{$cp};
-    %points{$cp}{$pname} = $value;
+    #%points{$cp}{$pname} = $value;
     #dump %points{0xAC01} if $cp == 0xAC00;
     #dump %points{0xAC00} if $cp == 0xAC00;
 
@@ -695,32 +703,31 @@ sub make-point-index (:$less) {
     my %points-ranges = get-points-ranges(%point-index);
     say "Done computing point_index ranges";
     my $dump-count = 0;
-    #say '=' x 20;
-    for %points-ranges.keys.sort(*.Int) {
-        #say $_, " => ", %points-ranges{$_}.perl;
-        last if $dump-count++ > 20;
-    }
-    #say '=' x 20;
     my Int $point-max = %points.keys.sort(-*)[0].Int;
     #say "point-max $point-max";
     my $type = compute-type($bin-index + 1);
-    #my $mapping := nqp::list_s;
     #`{{
     my int $bin-index_i = nqp::unbox_i($bin-index);
-    my $mapping_rows := nqp::list_s;
+    my $mapping := nqp::list_s;
     my @rows;
     my $i := nqp::add_i(0, 0);
     for 0..$point-max -> $i {
-        my $point_s := base10_I($i);
+        my $point_s := base10_I_decont($i);
         nqp::if(existskey(%point-index, $point_s),
             # if
             nqp::push_s($mapping, atkey(%point-index, $point_s)),
             # XXX for now let's denote things that have no value with 1 more than max index
             # else
-            nqp::push_s($mapping, atkey(%point-index, nqp::add_i($bin-index_i, 1)))
+            nqp::push_s($mapping,
+                atkey(%point-index,
+                    base10_I( nqp::add_i( $bin-index_i, 1)
+                    )
+                )
+            )
         );
     }
-    }}
+    spurt "mapping.txt", nqp::join("\n", $mapping);
+    #`}}
     my $t1 = now;
     my Cool:D @mapping;
     my @range-str;
@@ -738,7 +745,7 @@ sub make-point-index (:$less) {
         if %point-index{$range[0]}:exists {
             if $range.elems > $min-elems {
                 @range-str.push( [~] $indent, 'if (cp >= ', $range[0], ') {',
-                ($diff != 0 ?? ' return_val -= ' ~ $diff ~ ';' !! '') );
+                ($diff != 0 ?? ' return_val -= ' ~ $diff + 1 ~ ';' !! '') );
                 $indent ~= $tabstop;
                 @range-str.push: $indent ~ 'if (cp <= ' ~ $range[*-1] ~ ') return ' ~ %point-index{$range[0]} ~ ';';
             }
@@ -760,7 +767,7 @@ sub make-point-index (:$less) {
             if $range.elems > $min-elems {
                 #say "donet exist";
                 @range-str.push( [~] $indent, 'if (cp >= ', $range[0], ') {',
-                ($diff != 0 ?? ' return_val -= ' ~ $diff ~ ';' !! '') );
+                ($diff != 0 ?? ' return_val -= ' ~ $diff + 1 ~ ';' !! '') );
                 $indent ~= $tabstop;
                 @range-str.push: $indent ~ 'if (cp <= ' ~ $range[*-1] ~ ') return BITFIELD_DEFAULT;';
             }
@@ -833,6 +840,7 @@ sub make-bitfield-rows {
     my $bitfield-rows := nqp::list_s;
     my %bitfield-rows-seen = nqp::hash;
     my $t1 = now;
+    my ($enum, $enum-prop-nqp-prop);
     for %points.keys.sort(*.Int) -> $point {
         my $bitfield-columns := nqp::list_s;
         my $points-point := nqp::atkey(%points, $point);
@@ -843,9 +851,9 @@ sub make-bitfield-rows {
                         nqp::if($points-point{$prop}, '1', '0')
                     );
                 ), (nqp::if(nqp::existskey($enum-prop-nqp, $prop), (
-                        my $enum := $points-point{$prop};
+                        nqp::bind($enum-prop-nqp-prop, nqp::atkey($enum-prop-nqp, $prop));
                         # If the key exists we need to look up the value
-                        my $enum-prop-nqp-prop := nqp::atkey($enum-prop-nqp, $prop);
+                        nqp::bind($enum, $points-point{$prop});
                         # If it doesn't exist we already have the property code.
                         # Eventually we may want to try and have it so all things
                         # either have or don't have the property for consistency
