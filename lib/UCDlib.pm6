@@ -59,7 +59,7 @@ sub slurp-snippets ( Str $name, Str $subname?, $numbers? ) is export {
 }
 sub slurp-lines ( Str $filename ) returns Seq is export {
     note "Reading $filename.txt…";
-    "$UNIDATA-folder/$filename.txt".IO.slurp.lines orelse die;
+    "$UNIDATA-folder/$filename.txt".IO.lines orelse die;
 }
 sub Dump-Range ( Range $range, Hash $hashy ) is export {
     for $range.lazy -> $point {
