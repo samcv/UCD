@@ -7,7 +7,7 @@ use lib 'lib';
 use UCDlib; use ArrayCompose; use Set-Range;
 use seenwords; use EncodeBase40; use Operators;
 use BitfieldPacking; use bitfield-rows-switch;
-INIT say "Starting…";
+#INIT note "Starting…";
 constant $build-folder = "source";
 constant $snippets-folder = "snippets";
 # stores lines of bitfield.h
@@ -325,14 +325,22 @@ sub DerivedNumericValues ( Str $filename ) {
     }
 }
 sub binary-property ( Int $column, Str $filename ) {
-    my %props-seen;
+    my $t1 = now;
+    my %props-seen = nqp::hash;
+    my $property := '';
     for slurp-lines($filename) {
         next if skip-line($_);
         my @parts = .split-trim([';','#'], $column + 2);
-        my $property = @parts[$column];
-        %props-seen{$property} = True unless %props-seen{$property};
-        apply-pv-to-range(@parts[0], @parts[$column], True);
+        $property := @parts[$column];
+        nqp::bindkey(%props-seen, $property, True);
+        #%props-seen{$property} = True unless %props-seen{$property};
+        apply-pv-to-range(
+            @parts[0], # Range/Codepoint
+            $property, # Property
+            True       # Property Value
+        );
     }
+    say "Took {now - $t1} seconds to process $filename binary prop";
     register-binary-property(%props-seen.keys.sort(&[unicmp]));
 }
 sub get-pvalue-seen (Str $property, $negname) {
@@ -349,16 +357,15 @@ sub enumerated-property ( Int $column, $negname, Str $propname, Str $filename ) 
     die $propname unless %PropertyValueAliases{$propname}:exists;
     my Int $i = 0;
     my $t1 = now;
-    my $property-value;
     for slurp-lines($filename) {
         next if skip-line($_);
-        my @parts = .split-trim([';','#'], $column + 2);
-        nqp::bind($property-value, @parts[$column]);
-        bindkey(%seen-value, $property-value, True);
+        my \parts := .split-trim([';','#'], $column + 2);
+        #nqp::bind($property-value, @parts[$column]);
+        bindkey(%seen-value, parts[$column], True);
         apply-pv-to-range(
-            @parts[0], # range
+            parts[0], # range
             $propname,
-            $property-value # property value
+            parts[$column] # property value
         );
     }
     set-pvalue-seen($propname, $negname, %seen-value);
@@ -380,14 +387,15 @@ sub tweak_nfg_qc {
     note "Tweaking NFG_QC…";
     timer('tweak_nfg_qc');
     # See http://www.unicode.org/reports/tr29/tr29-27.html#Grapheme_Cluster_Boundary_Rules
+    # \r
+    my @nfg_qc_no =
+        0x0D, # \r
+        0x0E33, 0x0EB3; # some specials
+    ;
+    %points{$_}<NFG_QC> = False if %points{$_}:exists for @nfg_qc_no;
     for %points.keys -> $code {
-        # \r
-        if ($code == 0x0D) {
-            #%points{$code}<NFG_QC> = False;
-        }
         # SpacingMark, and a couple of specials
-        elsif (%points{$code}<General_Category>:exists and %points{$code}<General_Category> eq 'Mc')
-            || $code == 0x0E33 || $code == 0x0EB3
+        if (%points{$code}<General_Category>:exists and %points{$code}<General_Category> eq 'Mc')
         {
             %points{$code}<NFG_QC> = False;
         }
@@ -444,19 +452,21 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
         next if $no-UnicodeData and $cp > 100;
         my %hash = nqp::hash;
         if $gencat {
+            bindkey(%hash, @gc[0], nqp::substr($gencat, 0, 1));
+            bindkey(%hash, @gc[1], nqp::substr($gencat, 1, 1));
             bindkey(%hash, 'General_Category', $gencat);
-            if nqp::existskey(%seen-gc, $gencat) {
-                %hash{@gc[0]} = atkey2(%seen-gc, $gencat, @gc[0]);
-                %hash{@gc[1]} = atkey2(%seen-gc, $gencat, @gc[1]);
-            }
-            else {
-                %hash{@gc[0]} = nqp::substr($gencat, 0, 1);
-                %hash{@gc[1]} = nqp::substr($gencat, 1, 1);
-                my $h := nqp::hash;
-                bindkey($h, @gc[0], %hash{@gc[0]});
-                bindkey($h, @gc[1], %hash{@gc[1]});
-                bindkey(%seen-gc, $gencat, $h);
-            }
+            bindkey(%seen-gc, $gencat, True);
+            #if nqp::existskey(%seen-gc, $gencat) {
+            #    %hash{@gc[0]} = atkey2(%seen-gc, $gencat, @gc[0]);
+            #    %hash{@gc[1]} = atkey2(%seen-gc, $gencat, @gc[1]);
+            #}
+            #else {
+
+                #my $h := nqp::hash;
+                #bindkey($h, @gc[0], %hash{@gc[0]});
+                #bindkey($h, @gc[1], %hash{@gc[1]});
+                #bindkey(%seen-gc, $gencat, $h);
+            #}
         }
         if $ccclass {
             bindkey(%seen-ccc, $ccclass, True);
@@ -604,10 +614,13 @@ sub apply-pv-to-cp (int $cp, Str $pname, $value) is raw {
     #dump %points{0xAC00} if $cp == 0xAC00;
 
 }
-sub apply-hash-to-cp (Int $cp, Hash $hashy) {
+sub apply-hash-to-cp (Int $cp, Hash $hashy) is raw {
+    my str $cp_s = base10_I($cp);
+    existskey(%points, $cp_s)
+    # Full path in case there's already an existing key
+    ?? apply-hash-to-cp-full($cp, $hashy)
     # Fast path in case cp doesn't exist yet
-    existskey(%points, $cp.Str) ?? apply-hash-to-cp-full($cp, $hashy)
-    !! bindkey(%points, $cp.Str, $hashy);
+    !! bindkey(%points, $cp_s, $hashy);
 }
 sub apply-hash-to-cp-full (Int $cp, Hash $hashy) {
     # Otherwise we need to go through all the keys and apply them all
@@ -741,13 +754,13 @@ sub make-point-index (:$less) {
         my $range = .value;
         #say "range-no ", $range-no;
         #say "range[0] ", $range[0];
-        my $diff = $range[*-1] - $range[0];
+        my $diff = $range.end - $range[0];
         if %point-index{$range[0]}:exists {
             if $range.elems > $min-elems {
                 @range-str.push( [~] $indent, 'if (cp >= ', $range[0], ') {',
-                ($diff != 0 ?? ' return_val -= ' ~ $diff + 1 ~ ';' !! '') );
+                ($diff != 0 ?? ' return_val -= ' ~ $diff ~ ';' !! '') );
                 $indent ~= $tabstop;
-                @range-str.push: $indent ~ 'if (cp <= ' ~ $range[*-1] ~ ') return ' ~ %point-index{$range[0]} ~ ';';
+                @range-str.push: $indent ~ 'if (cp <= ' ~ $range.tail ~ ') return ' ~ %point-index{$range[0]} ~ ';';
             }
             else {
                 my $point-index-var = %point-index{$range[0]};
@@ -767,9 +780,9 @@ sub make-point-index (:$less) {
             if $range.elems > $min-elems {
                 #say "donet exist";
                 @range-str.push( [~] $indent, 'if (cp >= ', $range[0], ') {',
-                ($diff != 0 ?? ' return_val -= ' ~ $diff + 1 ~ ';' !! '') );
+                ($diff != 0 ?? ' return_val -= ' ~ $diff ~ ';' !! '') );
                 $indent ~= $tabstop;
-                @range-str.push: $indent ~ 'if (cp <= ' ~ $range[*-1] ~ ') return BITFIELD_DEFAULT;';
+                @range-str.push: $indent ~ 'if (cp <= ' ~ $range.tail ~ ') return BITFIELD_DEFAULT;';
             }
             else {
                 for ^$range.elems {
@@ -797,11 +810,14 @@ sub make-point-index (:$less) {
 sub make-bitfield-rows {
     note "Making bitfield-rows…";
     my str @code-sorted-props;
+    my $code-sorted-props := nqp::list_s;
     # Create the order of the struct
     @bitfield-h.push("struct binary_prop_bitfield  \{");
     my $bin-prop-nqp := nqp::hash;
+    #| Stores an array of Pairs where the key is the property name and the
+    #| value is the bitwidth. It then passes it off to BitfieldPacking module
     my @list-for-packing;
-
+    say @list-for-packing.WHY;
     for %binary-properties.keys.sort(&[unicmp]) -> $bin {
         @list-for-packing.push($bin => 1);
     }
@@ -840,26 +856,30 @@ sub make-bitfield-rows {
     my %bitfield-rows-seen = nqp::hash;
     my $t1 = now;
     my ($enum, $enum-prop-nqp-prop);
+    my \bitfield-columns := nqp::list_s;
+    my \points-point := 0;
+    my $bitfield-rows-str;
+    #my str $bin-index_s = '';
     for %points.keys.sort(*.Int) -> $point {
-        my \bitfield-columns := nqp::list_s;
-        my \points-point := nqp::atkey(%points, $point);
+        nqp::bind(bitfield-columns, nqp::list_s);
+        nqp::bind(points-point, nqp::decont(nqp::atkey(%points, $point)));
         for @code-sorted-props -> $prop {
-            nqp::if( nqp::existskey(nqp::decont(points-point), $prop), (
+            nqp::if( nqp::existskey(points-point, $prop), (
                 nqp::if( nqp::existskey($bin-prop-nqp, $prop), (
                     nqp::push_s(bitfield-columns,
-                        nqp::if(points-point{$prop}, '1', '0')
+                        nqp::if(nqp::atkey(points-point, $prop), '1', '0')
                     );
                 ), (nqp::if(nqp::existskey($enum-prop-nqp, $prop), (
                       nqp::stmts(
-                        nqp::bind($enum-prop-nqp-prop, nqp::atkey($enum-prop-nqp, $prop)),
+                        #nqp::bind($enum-prop-nqp-prop, nqp::atkey($enum-prop-nqp, $prop)),
                         # If the key exists we need to look up the value
-                        nqp::bind($enum, points-point{$prop}),
+                        nqp::bind($enum, nqp::atkey(points-point, $prop)),
                         # If it doesn't exist we already have the property code.
                         # Eventually we may want to try and have it so all things
                         # either have or don't have the property for consistency
                         # XXX
-                        nqp::if( nqp::existskey($enum-prop-nqp-prop, $enum), (
-                            nqp::push_s(bitfield-columns, nqp::atkey($enum-prop-nqp-prop, $enum));
+                        nqp::if( nqp::existskey(nqp::atkey($enum-prop-nqp, $prop), $enum), (
+                            nqp::push_s(bitfield-columns, atkey2($enum-prop-nqp, $prop, $enum));
                         ), (
                             nqp::push_s(bitfield-columns, $enum);
                            )
@@ -875,7 +895,7 @@ sub make-bitfield-rows {
             )
             #}
         }
-        my $bitfield-rows-str := nqp::join(',', bitfield-columns);
+        $bitfield-rows-str := nqp::join(',', bitfield-columns);
         # If we've already seen an identical row
         nqp::if(nqp::existskey(%bitfield-rows-seen, $bitfield-rows-str), (
             nqp::bindkey(%point-index, $point, nqp::atkey(%bitfield-rows-seen, $bitfield-rows-str))
