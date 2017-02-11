@@ -49,6 +49,7 @@ my $indent = ' ' x 4;
 sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
            Bool:D :$debug = False, Bool:D :$names-only = False, Bool:D :$no-UnicodeData = False,
            Bool:D :$no-names = False, Str :$only? ) {
+    my @only = $only ?? $only.split( [',', ' '] ) !! Empty;
     $debug-global = $debug;
     $less-global = $less;
     start-routine();
@@ -76,23 +77,24 @@ sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
             (1, 'emoji/emoji-data'),
             (1, 'DerivedCoreProperties'),
             (1, "DerivedNormalizationProps");
-        if $less and !$only {
+        if $less and !@only {
             #my $head = $less ?? 1 !! Inf;
             enumerated-property(|@enum-data[0]);
             binary-property(|@bin-data[0]);
         }
-        elsif $only {
-            if $only eq 'UnicodeData' {
+        elsif @only {
+            for @only -> $prop {
+                if @enum-data.first({ $_[2] eq $prop }) {
+                    enumerated-property( |@enum-data.first({ $_[2] eq $prop }) )
+                }
+                elsif @bin-data.first({ $_[1] eq $prop }) {
+                    binary-property(|@bin-data.first({ $_[1] }))
+                }
+                elsif $prop ne 'Numeric_Values' {
+                    die "Can't find property '$prop'";
+                }
             }
-            elsif @enum-data.first({ $_[2] eq $only }) {
-                enumerated-property( |@enum-data.first({ $_[2] eq $only }) )
-            }
-            elsif @bin-data.first({ $_[1] }) {
-                binary-property(|@bin-data.first({ $_[1] }))
-            }
-            else {
-                die "Can't find property '$only'";
-            }
+            DerivedNumericValues('extracted/DerivedNumericValues') if @only.any eq 'Numeric_Values';
         }
         else {
             enumerated-property( |$_ ) for @enum-data;
@@ -104,7 +106,7 @@ sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
     }
     unless $nomake {
         my $int-main;
-        if $less == 0 {
+        if $less == 0 or %enumerated-properties{'Numeric_Value_Numerator'}:!exists {
             $int-main = slurp-snippets("bitfield", "int-main");
         }
         else {
@@ -443,10 +445,15 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
     my $t1 = now;
     for slurp-lines $file {
         next if skip-line($_);
+        #`{{
         my @parts = nqp::split(';', $_);
         my ($code-str, $name, $gencat, $ccclass, $bidiclass, $decmpspec,
             $num1, $num2, $num3, $bidimirrored, $u1name, $isocomment,
             $suc, $slc, $stc) = @parts;
+        }}
+        my ($code-str, $name, $gencat, $ccclass, $bidiclass, $decmpspec,
+            $num1, $num2, $num3, $bidimirrored, $u1name, $isocomment,
+            $suc, $slc, $stc) = nqp::split(';', $_);
         my $cp = hex $code-str;
         next if $less != 0 and $cp > $less;
         next if $no-UnicodeData and $cp > 100;
@@ -754,13 +761,13 @@ sub make-point-index (:$less) {
         my $range = .value;
         #say "range-no ", $range-no;
         #say "range[0] ", $range[0];
-        my $diff = $range.end - $range[0];
+        my $diff = $range.tail - $range[0];
         if %point-index{$range[0]}:exists {
             if $range.elems > $min-elems {
                 @range-str.push( [~] $indent, 'if (cp >= ', $range[0], ') {',
-                ($diff != 0 ?? ' return_val -= ' ~ $diff ~ ';' !! '') );
+                ($diff != 0 ?? ' return_val -= ' ~ $diff + 1 ~ ';' !! '') );
                 $indent ~= $tabstop;
-                @range-str.push: $indent ~ 'if (cp <= ' ~ $range.tail ~ ') return ' ~ %point-index{$range[0]} ~ ';';
+                @range-str.push: $indent ~ 'if (cp <= ' ~ $range[*-1] ~ ') return ' ~ %point-index{$range[0]} ~ ';';
             }
             else {
                 my $point-index-var = %point-index{$range[0]};
@@ -780,9 +787,9 @@ sub make-point-index (:$less) {
             if $range.elems > $min-elems {
                 #say "donet exist";
                 @range-str.push( [~] $indent, 'if (cp >= ', $range[0], ') {',
-                ($diff != 0 ?? ' return_val -= ' ~ $diff ~ ';' !! '') );
+                ($diff != 0 ?? ' return_val -= ' ~ $diff + 1 ~ ';' !! '') );
                 $indent ~= $tabstop;
-                @range-str.push: $indent ~ 'if (cp <= ' ~ $range.tail ~ ') return BITFIELD_DEFAULT;';
+                @range-str.push: $indent ~ 'if (cp <= ' ~ $range[*-1] ~ ') return BITFIELD_DEFAULT;';
             }
             else {
                 for ^$range.elems {
