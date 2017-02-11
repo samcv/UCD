@@ -46,9 +46,9 @@ my $less-global;
 my int $bin-index = -1;
 my $indent = ' ' x 4;
 
-sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0,
-           Bool :$debug = False, Bool :$names-only = False, Bool :$no-UnicodeData = False,
-           Str :$only? ) {
+sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
+           Bool:D :$debug = False, Bool:D :$names-only = False, Bool:D :$no-UnicodeData = False,
+           Bool:D :$no-names = False, Str :$only? ) {
     $debug-global = $debug;
     $less-global = $less;
     start-routine();
@@ -118,10 +118,10 @@ sub MAIN ( Bool :$dump = False, Bool :$nomake = False, Int :$less = 0,
             write-file('bitfield.c', $bitfield_c);
             write-file('bitfield.h', @bitfield-h.join("\n"));
         }
-        write-file('names.c', Generate_Name_List()) unless $no-UnicodeData;
+        write-file('names.c', Generate_Name_List()) unless $no-UnicodeData or $no-names;
     }
     say "Took {now - INIT now} seconds.";
-    dump-json($dump);
+    dump-json($dump) unless $dump;
 }
 sub missing (Str $line is copy) {
     # @missing: 0000..10FFFF; cjkAccountingNumeric; NaN
@@ -796,8 +796,7 @@ sub make-point-index (:$less) {
 }
 sub make-bitfield-rows {
     note "Making bitfield-rows…";
-    my str $binary-struct-str;
-    my @code-sorted-props;
+    my str @code-sorted-props;
     # Create the order of the struct
     @bitfield-h.push("struct binary_prop_bitfield  \{");
     my $bin-prop-nqp := nqp::hash;
@@ -842,38 +841,41 @@ sub make-bitfield-rows {
     my $t1 = now;
     my ($enum, $enum-prop-nqp-prop);
     for %points.keys.sort(*.Int) -> $point {
-        my $bitfield-columns := nqp::list_s;
-        my $points-point := nqp::atkey(%points, $point);
+        my \bitfield-columns := nqp::list_s;
+        my \points-point := nqp::atkey(%points, $point);
         for @code-sorted-props -> $prop {
-            if $points-point{$prop}:exists {
+            nqp::if( nqp::existskey(nqp::decont(points-point), $prop), (
                 nqp::if( nqp::existskey($bin-prop-nqp, $prop), (
-                    nqp::push_s($bitfield-columns,
-                        nqp::if($points-point{$prop}, '1', '0')
+                    nqp::push_s(bitfield-columns,
+                        nqp::if(points-point{$prop}, '1', '0')
                     );
                 ), (nqp::if(nqp::existskey($enum-prop-nqp, $prop), (
-                        nqp::bind($enum-prop-nqp-prop, nqp::atkey($enum-prop-nqp, $prop));
+                      nqp::stmts(
+                        nqp::bind($enum-prop-nqp-prop, nqp::atkey($enum-prop-nqp, $prop)),
                         # If the key exists we need to look up the value
-                        nqp::bind($enum, $points-point{$prop});
+                        nqp::bind($enum, points-point{$prop}),
                         # If it doesn't exist we already have the property code.
                         # Eventually we may want to try and have it so all things
                         # either have or don't have the property for consistency
                         # XXX
                         nqp::if( nqp::existskey($enum-prop-nqp-prop, $enum), (
-                            nqp::push_s($bitfield-columns, nqp::atkey($enum-prop-nqp-prop, $enum));
+                            nqp::push_s(bitfield-columns, nqp::atkey($enum-prop-nqp-prop, $enum));
                         ), (
-                            nqp::push_s($bitfield-columns, $enum);
+                            nqp::push_s(bitfield-columns, $enum);
                            )
-                        );
+                        )
+                      )
                     ), (nqp::die('oh no') )
                     ),
                     )
                 );
-            }
-            else {
-                nqp::push_s($bitfield-columns, '0');
-            }
+              ),
+            #else {
+                nqp::push_s(bitfield-columns, '0')
+            )
+            #}
         }
-        my $bitfield-rows-str := nqp::join(',', $bitfield-columns);
+        my $bitfield-rows-str := nqp::join(',', bitfield-columns);
         # If we've already seen an identical row
         nqp::if(nqp::existskey(%bitfield-rows-seen, $bitfield-rows-str), (
             nqp::bindkey(%point-index, $point, nqp::atkey(%bitfield-rows-seen, $bitfield-rows-str))
@@ -893,7 +895,7 @@ sub make-bitfield-rows {
     for %bitfield-rows-seen.sort(*.value.Int).».kv -> ($row-str, $index) {
         nqp::push_s($bitfield-rows, '    {' ~ $row-str ~ "\},/* index $index */");
     }
-    $binary-struct-str = nqp::join("\n", $bitfield-rows);
+    my str $binary-struct-str = nqp::join("\n", $bitfield-rows);
     say "Took {now - $t2} seconds to join all the seen bitfield rows";
     return qq:to/END/;
     #include <stdio.h>
