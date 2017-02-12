@@ -7,7 +7,7 @@
     "Data::Dump",
     "Terminal::ANSIColor",
     "JSON::Fast"
-    ],
+  ],
   "description" : "",
   "name" : "packer",
   "perl" : "6.c",
@@ -15,7 +15,6 @@
     "ArrayCompose" : "lib/ArrayCompose.pm6",
     "BitfieldPacking" : "lib/BitfieldPacking.pm6",
     "EncodeBase40" : "lib/EncodeBase40.pm6",
-    "Operators" : "lib/Operators.pm6",
     "Set-Range" : "lib/Set-Range.pm6",
     "UCDlib" : "lib/UCDlib.pm6",
     "bitfield-rows-switch" : "lib/bitfield-rows-switch.pm6",

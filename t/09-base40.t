@@ -1,27 +1,33 @@
 #!/usr/bin/env perl6
 use v6;
 use Test;
-todo "Needs rework", 4;
 use nqp;
 use lib 'lib';
 use EncodeBase40;
+my @array = "CAPITAL","LETTER","LATIN","DIGIT","PARENTHESIS","SIGN","SMALL",
+"BRACKET","SOLIDUS","HYPHEN-MINUS","GREATER-THAN","EXCLAMATION","SQUARE",
+"ACCENT","COMMERCIAL","CIRCUMFLEX","APOSTROPHE","MARK","QUOTATION","AMPERSAND",
+"SEMICOLON","LESS-THAN","RIGHT","QUESTION","ASTERISK","PERCENT","REVERSE",
+"LEFT","EQUALS","NUMBER","DOLLAR","COLON","COMMA","SEVEN","EIGHT","SPACE",
+"GRAVE","THREE","LINE","PLUS";
 my $string = 'HERE IS A STRING-';
-my $one := encode-base40-string($string);
-my $one_o := base40-string.new;
+my $one_o = base40-string.new;
 $one_o.push($string);
+#is-deeply $one_o.join(","), "13018,9489,31881,59980,29174,12720";
+my $two_o = base40-string.new;
+$two_o.set-shift-level-one(@array);
+$two_o.push('RIGHT');
+say $two_o.done;
+is $two_o.join(','), 63280;
+#say $two_o.join(',');
+#`{{
 #is $one_o.elems, 6;
 #say $one.perl;
-is nqp::elems($one), ($string.chars/3).ceiling, "'$string' with shift set returns {($string.chars/3).ceiling} elements";
 my @p6_one;
 nqp::while(nqp::elems($one) != 0, (
     @p6_one.push(nqp::shift_s($one))
 ));
-is decode-base40-nums(@p6_one), $string, "'$string' can be round tripped with no shift";
-my @array = "CAPITAL","LETTER","LATIN","DIGIT","PARENTHESIS","SIGN","SMALL","BRACKET","SOLIDUS",
-"HYPHEN-MINUS","GREATER-THAN","EXCLAMATION","SQUARE","ACCENT","COMMERCIAL","CIRCUMFLEX",
-"APOSTROPHE","MARK","QUOTATION","AMPERSAND","SEMICOLON","LESS-THAN","RIGHT","QUESTION",
-"ASTERISK","PERCENT","REVERSE","LEFT","EQUALS","NUMBER","DOLLAR","COLON","COMMA","SEVEN",
-"EIGHT","SPACE","GRAVE","THREE","LINE","PLUS";
+
 my $i = 0;
 my %hash;
 for @array {
@@ -39,3 +45,4 @@ is decode-base40-nums(@p6_two), $string, "'$string' can be round-tripped with sh
 $string = "CAPITAL";
 is decode-base40-nums(encode-base40-string($string)), $string, "'$string' can be round-tripped with shift set, it's the last shift value";
 done-testing;
+}}
