@@ -1,6 +1,11 @@
 use v6;
 use MONKEY-TYPING;
 use Data::Dump;
+use Terminal::ANSIColor;
+constant $BOLD = BOLD;
+constant $BOLD_OFF = BOLD_OFF;
+constant $BLUE = color('blue');
+constant $RESET = RESET;
 use nqp;
 my $prefix = 'const static ';
 my Str $UNIDATA-folder = "UNIDATA";
@@ -58,7 +63,7 @@ sub slurp-snippets ( Str $name, Str $subname?, $numbers? ) is export {
     $text;
 }
 sub slurp-lines ( Str $filename ) returns Seq is export {
-    note "Reading $filename.txt…";
+    note $BOLD, "Reading ", $BLUE, $filename, '.txt', $RESET, $BOLD, ' …', $RESET;
     "$UNIDATA-folder/$filename.txt".IO.lines orelse die;
 }
 sub Dump-Range ( Range $range, Hash $hashy ) is export {

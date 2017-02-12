@@ -2,28 +2,25 @@ constant $debug = False;
 sub get-points-ranges (%point-index) is export {
     my %ranges;
     my $saw = '';
-    my $i = -1;
-    my $point-no = -1;
-    my @keys = %point-index.keys.sort(*.Int);
-    for ^@keys.elems -> $elem {
-        my $cp = @keys[$elem];
-        say "start point-no: $point-no key $cp" if $debug;
+    my int $i = -1;
+    my int $point-no = -1;
+    #%ranges<0> = [];
+    for %point-index.keys.sort(*.Int) -> $cp {
+        #say "start point-no: $point-no key $cp" if $debug;
         $point-no++;
-
         if $cp != $point-no {
-            say "missing one" if $debug;
-            say "next one is ", @keys[$elem] if $debug;
-            my $between = @keys[$elem] - $point-no;
-            say "Between this and the next one there are ", $between if $debug;
+            #say "missing one" if $debug;
+            #say "next one is ", @keys[$elem] if $debug;
+            my $between = $cp - $point-no;
+            #say "Between this and the next one there are ", $between if $debug;
             $i++;
             if $between == 1 {
                 push %ranges{$i}, $point-no;
             }
             else {
-                my $range = Range.new($point-no, $point-no + $between - 1);
-                say $range if $debug;
-                for $range.lazy {
-                    say $_ if $debug;
+                #say $range if $debug;
+                for ($point-no)..($point-no + $between - 1) {
+                    #say $_ if $debug;
                     push %ranges{$i}, $_;
                 }
             }
@@ -34,7 +31,9 @@ sub get-points-ranges (%point-index) is export {
         }
         else {
             $saw = %point-index{$cp};
-            push %ranges{++$i}, $cp ;
+            %ranges{++$i} = [];
+            %ranges{$i}.push($cp);
+            #push %ranges{++$i}, $cp ;
         }
     }
     %ranges;

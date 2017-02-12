@@ -3,6 +3,7 @@ use experimental :macros, :collation;
 use nqp;
 use JSON::Fast;
 use Data::Dump;
+use Terminal::ANSIColor;
 use lib 'lib';
 use UCDlib; use ArrayCompose; use Set-Range;
 use seenwords; use EncodeBase40; use Operators;
@@ -10,6 +11,8 @@ use BitfieldPacking; use bitfield-rows-switch;
 #INIT note "Starting…";
 constant $build-folder = "source";
 constant $snippets-folder = "snippets";
+#my $BOLD     = BOLD;
+#my $BOLD_OFF = BOLD_OFF;
 # stores lines of bitfield.h
 our @bitfield-h;
 sub timer (Str $name = '') {
@@ -719,13 +722,14 @@ sub make-enums {
     @enums.join("\n");
 }
 sub make-point-index (:$less) {
-    note "Making point_index…\n";
+    note $BOLD, "Making point_index…\n", $RESET;
+    my $t0 = now;
     my %points-ranges = get-points-ranges(%point-index);
-    say "Done computing point_index ranges";
+    say "Took ", $BOLD, now - $t0, $RESET, " seconds to compute point_index ranges";
     my $dump-count = 0;
-    my Int $point-max = %points.keys.sort(-*)[0].Int;
+    my Int $point-max = %points.keys.sort(-*.Int)[0].Int;
     #say "point-max $point-max";
-    my $type = compute-type($bin-index + 1);
+    my Str $type = compute-type($bin-index + 1);
     #`{{
     my int $bin-index_i = nqp::unbox_i($bin-index);
     my $mapping := nqp::list_s;
@@ -750,9 +754,8 @@ sub make-point-index (:$less) {
     #`}}
     my $t1 = now;
     my Cool:D @mapping;
-    my @range-str;
     my $min-elems = 10;
-    @range-str.append: 'int get_bitfield_offset (uint32_t cp) {',
+    my str @range-str = 'int get_bitfield_offset (uint32_t cp) {',
         '#define BITFIELD_DEFAULT ' ~ $bin-index + 1, 'int return_val = cp;';
     my $indent = '';
     my $tabstop = ' ';
