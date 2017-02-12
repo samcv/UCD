@@ -8,11 +8,8 @@ use lib 'lib';
 use UCDlib; use ArrayCompose; use Set-Range;
 use seenwords; use EncodeBase40; use Operators;
 use BitfieldPacking; use bitfield-rows-switch;
-#INIT note "Starting…";
 constant $build-folder = "source";
 constant $snippets-folder = "snippets";
-#my $BOLD     = BOLD;
-#my $BOLD_OFF = BOLD_OFF;
 # stores lines of bitfield.h
 our @bitfield-h;
 sub timer (Str $name = '') {
@@ -26,13 +23,13 @@ macro dump($x) { quasi { say {{{$x}}}.VAR.name, ": ", Dump {{{$x}}} } };
 my %points = nqp::hash; # Stores all the cp's property values of all types
 my %names = nqp::hash; # Unicode Name hash for generating the name table
 my %binary-properties; # Stores the binary property names
-# Stores enum prop names and also the property
-# codes which are just internal numbers to represent it in the C datastructure
+#| Stores enum prop names and also the property
+#| codes which are just internal numbers to represent it in the C datastructure
 my %enumerated-properties;
-# Stores the decomposition data for NFD
+#| Stores the decomposition data for NFD
 my %decomp_spec;
-# Stores PropertyValueAliases from PropertyValueAliases.txt
-# Used to go from short names that may be used in the data files to the full names
+#| Stores PropertyValueAliases from PropertyValueAliases.txt
+#| Used to go from short names that may be used in the data files to the full names
 my %PropertyValueAliases;
 my %PropertyNameAliases;
 # Stores Property Aliases or Property Value Aliases to their Full Name mappings
@@ -432,7 +429,6 @@ sub skip-line ( Str $line ) is export {
     False;
 }
 sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
-    register-binary-property(<Any Bidi_Mirrored>);
     my %seen-ccc = nqp::hash;
     my %seen-gc = nqp::hash;
     #3400;<CJK Ideograph Extension A, First>;Lo;0;L;;;;;N;;;;;
