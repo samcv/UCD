@@ -326,15 +326,13 @@ sub DerivedNumericValues ( Str $filename ) {
 sub binary-property ( Int $column, Str $filename ) {
     my $t1 = now;
     my %props-seen = nqp::hash;
-    for slurp-lines($filename) {
-        next if skip-line($_);
-        nqp::bindkey(%props-seen,
+    nqp::bindkey(%props-seen,
         apply-pv-to-range(
-         |.split([';','#'], 3).head(2).».trim,
+         |.split([';','#'], 3).head(2)».trim,
         # Range, # Property Name
           True       # Property Value
-        ), True);
-    }
+        ), True) unless skip-line($_)
+        for slurp-lines $filename;
     say "Took {now - $t1} seconds to process $filename binary prop";
     register-binary-property(%props-seen.keys.sort(&[unicmp]));
 }
@@ -347,21 +345,21 @@ sub get-pvalue-seen (Str $property, $negname) {
         return %enumerated-properties{$property};
     }
 }
-sub enumerated-property ( Int $column, $negname, Str $propname, Str $filename ) {
+multi sub enumerated-property ( 1, $negname, Str $propname, Str $filename ) {
     my %seen-value = nqp::hash;
     die $propname unless %PropertyValueAliases{$propname}:exists;
     my Int $i = 0;
     my $t1 = now;
     for slurp-lines($filename) {
-        next if skip-line($_);
-        my \parts := .split([';','#'], $column + 2)».trim;
         #nqp::bind($property-value, @parts[$column]);
-        bindkey(%seen-value, parts[$column], True);
-        apply-pv-to-range(
-            parts[0], # range
-            $propname,
-            parts[$column] # property value
-        );
+        bindkey(%seen-value,
+            apply-pv-to-range_enum(
+                |.split([';','#'], 3).head(2)».trim,
+                $propname
+            ),
+            $propname
+        )
+            unless skip-line($_);
     }
     set-pvalue-seen($propname, $negname, %seen-value);
     say "Took {now - $t1} seconds to process $propname enums";
@@ -536,13 +534,25 @@ sub apply-hash-to-range (Str $range-str, Hash $hashy) {
         die "Unknown range '$range-str'";
     }
 }
+sub apply-pv-to-range_enum ($range-str, $value, Str $pname) is raw {
+    # If it contains `..` then it is a range
+    apply-pv-to-range2( |$range-str.split('..').map( { hex $_ } ),
+        $pname, $value
+    );
+    return $value;
+}
 sub apply-pv-to-range ($range-str, Str $pname, $value) is raw {
     # If it contains `..` then it is a range
-    my \list = $range-str.split('..').map( { hex $_ } );
-    list[1]:exists
-    ?? (apply-pv-to-cp($_, $pname, $value) for list[0]..list[1])
-    !! apply-pv-to-cp(list[0], $pname, $value);
+    apply-pv-to-range2( |$range-str.split('..').map( { hex $_ } ),
+        $pname, $value
+    );
     return $pname;
+}
+multi sub apply-pv-to-range2 (Int $first, Int $second, Str $pname, $value) is raw {
+    apply-pv-to-cp($_, $pname, $value) for $first..$second;
+}
+multi sub apply-pv-to-range2 (Int $first, Str $pname, $value) is raw {
+    apply-pv-to-cp($first, $pname, $value);
 }
 sub apply-pv-to-cp (int $cp, Str $pname, $value) is raw {
     my \cp_s := base10_I($cp);
@@ -715,7 +725,7 @@ sub make-point-index (:$less) {
     say "Took this long to concat points: ", now - $t1;
     my $mapping-str = ( "#define max_bitfield_index $point-max\n$type point_index[",
         @mapping.elems, "] = \{\n    ",
-        @mapping.join(',').break-into-lines, "\n\};\n"
+        @mapping.join(',').break-into-lines(','), "\n\};\n"
         ).join;
     $mapping-str ~ @range-str.join("\n");
 }
