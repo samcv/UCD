@@ -20,38 +20,47 @@ sub timer (Str $name = '') {
     }
 }
 macro dump($x) { quasi { say {{{$x}}}.VAR.name, ": ", Dump {{{$x}}} } };
-my %points = nqp::hash; # Stores all the cp's property values of all types
-my %names = nqp::hash; # Unicode Name hash for generating the name table
-my %binary-properties; # Stores the binary property names
-#| Stores enum prop names and also the property
-#| codes which are just internal numbers to represent it in the C datastructure
+my %points = nqp::hash;
+my %names = nqp::hash;
+=head2 %names
+=para Unicode Name hash for generating the name table
+
+my %binary-properties;
+=head2 %binary-properties
+=para Stores the binary property names
+
 my %enumerated-properties;
-#| Stores the decomposition data for NFD
+=head2 %enumerated-properties
+=para Stores enum prop names and also the property
+codes which are just internal numbers to represent it in the C datastructure
+
 my %decomp_spec;
-#| Stores PropertyValueAliases from PropertyValueAliases.txt
-#| Used to go from short names that may be used in the data files to the full names
+=head2 %decomp_spec
+=para Stores the decomposition data for decomposition
+
 my %PropertyValueAliases;
-my %PropertyNameAliases;
-# Stores Property Aliases or Property Value Aliases to their Full Name mappings
-my %PropertyNameAliases_to;
 my %PropertyValueAliases_to;
+=head2 %PropertyValueAliases %PropertyValueAliases_to
+=para Stores PropertyValueAliases from PropertyValueAliases.txt
+Used to go from short names that may be used in the data files to the full names
+
+my %PropertyNameAliases;
+my %PropertyNameAliases_to;
+=head2 %PropertyNameAliases %PropertyNameAliases_to
+=para Stores Property Aliases or Property Value Aliases to their Full Name mappings
+
 my %missing;
 constant $missing-str = '# @missing';
 constant @gc = 'General_Category_1', 'General_Category_2';
-my %point-to-struct;
-my %bitfields;
 my %point-index = nqp::hash;
 my $debug-global = False;
-my $less-global;
 my int $bin-index = -1;
-my $indent = ' ' x 4;
 
 sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
            Bool:D :$debug = False, Bool:D :$names-only = False, Bool:D :$no-UnicodeData = False,
            Bool:D :$no-names = False, Str :$only? ) {
     my @only = $only ?? $only.split( [',', ' '] ) !! Empty;
     $debug-global = $debug;
-    $less-global = $less;
     start-routine();
     PNameAliases("PropertyAliases", %PropertyNameAliases, %PropertyNameAliases_to);
     PValueAliases("PropertyValueAliases", %PropertyValueAliases, %PropertyValueAliases_to);
@@ -351,15 +360,13 @@ multi sub enumerated-property ( 1, $negname, Str $propname, Str $filename ) {
     my Int $i = 0;
     my $t1 = now;
     for slurp-lines($filename) {
-        #nqp::bind($property-value, @parts[$column]);
         bindkey(%seen-value,
             apply-pv-to-range_enum(
                 |.split([';','#'], 3).head(2)».trim,
                 $propname
             ),
             $propname
-        )
-            unless skip-line($_);
+        ) unless skip-line($_);
     }
     set-pvalue-seen($propname, $negname, %seen-value);
     say "Took {now - $t1} seconds to process $propname enums";
