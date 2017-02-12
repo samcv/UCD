@@ -3,4 +3,6 @@ perl6:
     - latest
 
 install:
-    - rakudobrew build-panda
+    - rakudobrew build-zef
+    - zef --depsonly install .
+    - prove -e perl6
