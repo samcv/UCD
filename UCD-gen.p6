@@ -482,23 +482,18 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
                 $name ~~ s/', Last>'$/>/;
                 if %First-point {
                     # This function can work on ranges
-                    for Range.new($first-point-cp, $cp) {
-                        # We need to duplicate the hash so each cp hash a new hash
-                        my %new-hash = %hash;
-                        apply-hash-to-cp($_, %new-hash);
-                    }
-                    #say "Found Range in UnicodeData: $first-point-cp..$cp";
                     for $first-point-cp..$cp {
+                        # We need to duplicate the hash so each cp hash is a new hash
+                        # otherwise when we write to one cp's value later, it will
+                        # end up changing multiple cp's
+                        apply-hash-to-cp($_, my %new-hash = %hash);
                         bindkey(%names, base10_I_decont($_), $name);
                     }
-                    %First-point := {};
+                    %First-point    = nqp::hash;
                     $first-point-cp = Nil;
-                    #say "Took ", now - $t9, " seconds to process this range";
                     next;
                 }
-                else {
-                    die;
-                }
+                else { die }
             }
             elsif $name.ends-with(', First>') {
                 $first-point-cp = $cp;
@@ -550,27 +545,18 @@ sub apply-hash-to-range (Str $range-str, Hash $hashy) {
 }
 sub apply-pv-to-range ($range-str, Str $pname, $value) is raw {
     # If it contains `..` then it is a range
-    my \items = $range-str.split('..').map( { hex $_ } );
-    if items[1].defined {
-        for items[0]..items[1] -> $cp {
-            apply-pv-to-cp($cp, $pname, $value);
-        }
-    }
-    elsif items[0].defined {
-        apply-pv-to-cp(items[0], $pname, $value);
-    }
-    else {
-        die "Unknown range '$range-str'";
-        return False;
-    }
+    my \list = $range-str.split('..').map( { hex $_ } );
+    list[1]:exists
+    ?? (apply-pv-to-cp($_, $pname, $value) for list[0]..list[1])
+    !! apply-pv-to-cp(list[0], $pname, $value);
     return $pname;
 }
 sub apply-pv-to-cp (int $cp, Str $pname, $value) is raw {
-    my \cp_s = base10_I($cp);
+    my \cp_s := base10_I($cp);
     if !existskey(%points, cp_s) {
         bindkey(%points, cp_s, nqp::hash);
     }
-    elsif %points{cp_s}{$pname}:exists {
+    elsif nqp::existskey(nqp::decont(nqp::atkey(%points, cp_s)), $pname) {
         return if %points{cp_s}{$pname} eqv $value;
         my $var = %points{cp_s}{$pname};
         die "Pname $pname for cp {$cp.base(16)} already exists: '$var' ",
@@ -697,10 +683,8 @@ sub make-point-index (:$less) {
     my $indent = '';
     my $tabstop = ' ';
     for %points-ranges.sort(*.key.Int) {
-        my $range-no = .key;
-        my $range = .value;
+        my ($range-no, $range) = (.key, .value);
         my $inc-diff = $range.tail - $range.head + 1;
-        my $what = 0;
         if %point-index{$range.head}:exists {
             if $range.elems > $min-elems {
                 @range-str.push( [~] $indent, 'if (cp >= ', $range.head, ') {',
@@ -717,7 +701,6 @@ sub make-point-index (:$less) {
         }
         else {
             if $range.elems > $min-elems {
-                #say "donet exist";
                 @range-str.push( [~] $indent, 'if (cp >= ', $range.head, ') {',
                 ($inc-diff != 1 ?? ' return_val -= ' ~ $inc-diff ~ ';' !! '') );
                 $indent ~= $tabstop;
@@ -765,7 +748,7 @@ sub make-bitfield-rows {
         @list-for-packing.push(.key => .value.bitwidth);
     }
     my @packed-enums = compute-packing(@list-for-packing);
-    say "Packed-enums: ", @packed-enums.perl;
+    say $BOLD, "Packed-enums: ", $BOLD_OFF, @packed-enums.perl;
     for @packed-enums.».key -> $property {
         my $bitwidth;
         if %enumerated-properties{$property}:exists {
@@ -797,7 +780,7 @@ sub make-bitfield-rows {
     my ($enum, $enum-prop-nqp-prop);
     my \bitfield-columns := nqp::list_s;
     my \points-point := 0;
-    my $bitfield-rows-str;
+    my str $bitfield-rows-str;
     #my str $bin-index_s = '';
     for %points.keys.sort(*.Int) -> $point {
         nqp::bind(bitfield-columns, nqp::list_s);
@@ -834,7 +817,7 @@ sub make-bitfield-rows {
             )
             #}
         }
-        $bitfield-rows-str := nqp::join(',', bitfield-columns);
+        $bitfield-rows-str = nqp::join(',', bitfield-columns);
         # If we've already seen an identical row
         nqp::if(nqp::existskey(%bitfield-rows-seen, $bitfield-rows-str), (
             nqp::bindkey(%point-index, $point, nqp::atkey(%bitfield-rows-seen, $bitfield-rows-str))
