@@ -20,7 +20,7 @@
     "UCDlib" : "lib/UCDlib.pm6",
     "bitfield-rows-switch" : "lib/bitfield-rows-switch.pm6",
     "packer" : "lib/packer.pm6",
-    "seenwords" : "lib/seenwords.pm6",
+    "seenwords" : "lib/seenwords.pm6"
   },
   "resources" : [ ],
   "source-url" : "git://github.com/samcv/UCD.git",
