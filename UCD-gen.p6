@@ -6,7 +6,7 @@ use Data::Dump;
 use Terminal::ANSIColor;
 use lib 'lib';
 use UCDlib; use ArrayCompose; use Set-Range;
-use seenwords; use EncodeBase40; use Operators;
+use seenwords; use EncodeBase40;
 use BitfieldPacking; use bitfield-rows-switch;
 constant $build-folder = "source";
 constant $snippets-folder = "snippets";
@@ -106,12 +106,9 @@ sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
     }
     unless $nomake {
         my $int-main;
-        if $less == 0 or %enumerated-properties{'Numeric_Value_Numerator'}:!exists {
-            $int-main = slurp-snippets("bitfield", "int-main");
-        }
-        else {
-            $int-main = slurp-snippets("bitfield", "int-main", -2);
-        }
+        $int-main =  %enumerated-properties{'Numeric_Value_Numerator'}:exists
+        ?? slurp-snippets("bitfield", "int-main")
+        !! slurp-snippets("bitfield", "int-main", -2);
         unless $names-only {
             my $bitfield_c = [~] slurp-snippets("bitfield", "header"),
                 make-enums(), make-bitfield-rows(), make-point-index(),
@@ -129,13 +126,13 @@ sub missing (Str $line is copy) {
     # @missing: 0000..10FFFF; cjkAccountingNumeric; NaN
     die unless $line.starts-with($missing-str);
     $line ~~ s/$missing-str': '//;
-    my @parts = $line.split-trim(';');
+    my @parts = $line.split(';')».trim;
     %missing{@parts[1]} = @parts[2];
 }
 sub PValueAliases (Str $filename, %aliases, %aliases_to?) {
     for slurp-lines($filename) -> $line {
         next if skip-line($line);
-        my @parts = $line.split-trim(';');
+        my @parts = $line.split(';')».trim;
         my $prop-name = @parts.shift;
         my $short-pvalue = @parts.shift;
         my $long-pvalue = @parts[0];
@@ -199,7 +196,7 @@ class pvalue-seen {
 sub PNameAliases (Str $filename, %aliases, %aliases_to?) {
     for slurp-lines($filename) -> $line {
         next if skip-line($line);
-        my @parts = $line.split-trim(';');
+        my @parts = $line.split(';')».trim;
         my $short-name = @parts.shift;
         my $long-name = @parts.shift;
         push %aliases{$long-name}, $short-name;
@@ -316,7 +313,7 @@ sub DerivedNumericValues ( Str $filename ) {
     my $denominator-seen = get-pvalue-seen('Numeric_Value_Denominator', 0);
     for slurp-lines($filename) {
         next if skip-line($_);
-        my @parts = .split-trim([';','#']);
+        my @parts = .split([';','#'])».trim;
         my $cp = @parts[0];
         my ($numerator, $denominator) = @parts[3].split('/');
         $denominator = $denominator // 1;
@@ -357,7 +354,7 @@ sub enumerated-property ( Int $column, $negname, Str $propname, Str $filename ) 
     my $t1 = now;
     for slurp-lines($filename) {
         next if skip-line($_);
-        my \parts := .split-trim([';','#'], $column + 2);
+        my \parts := .split([';','#'], $column + 2)».trim;
         #nqp::bind($property-value, @parts[$column]);
         bindkey(%seen-value, parts[$column], True);
         apply-pv-to-range(
@@ -409,7 +406,7 @@ sub tweak_nfg_qc {
 sub PValueAlias ( Str $property, Str $file ) {
     for slurp-lines $file {
         next if skip-line($_);
-        my @parts = .split-trim(';');
+        my @parts = .split(';')».trim;
         my %hash;
         %hash{$property}{@parts[1]}<type> = @parts[2];
         apply-hash-to-range(@parts[0], %hash)
@@ -471,15 +468,12 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
 
         if $decmpspec {
             my @dec = nqp::split(' ', $decmpspec);
-            %decomp_spec{$cp}<type> = starts-with(@dec[0], '<')
-            ?? @dec.shift
-            !! 'Canonical';
+            %decomp_spec{$cp}<type> =
+                starts-with(@dec[0], '<') ?? @dec.shift !! 'Canonical';
             %decomp_spec{$cp}<mapping> = @dec.map( { hex $_ } )
         }
         if starts-with($name, '<') {
             if $name.ends-with(', Last>') {
-                my $t9 = now;
-                $name ~~ s/', Last>'$/>/;
                 if %First-point {
                     # This function can work on ranges
                     for $first-point-cp..$cp {
@@ -496,9 +490,8 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
                 else { die }
             }
             elsif $name.ends-with(', First>') {
-                $first-point-cp = $cp;
-                $name ~~ s/', First>'$/>/;
                 %First-point = %hash;
+                $first-point-cp = $cp;
                 next;
             }
         }
@@ -684,16 +677,16 @@ sub make-point-index (:$less) {
     my $tabstop = ' ';
     for %points-ranges.sort(*.key.Int) {
         my ($range-no, $range) = (.key, .value);
-        my $inc-diff = $range.tail - $range.head + 1;
-        if %point-index{$range.head}:exists {
+        my $inc-diff = $range.tail - $range[0] + 1;
+        if %point-index{$range[0]}:exists {
             if $range.elems > $min-elems {
-                @range-str.push( [~] $indent, 'if (cp >= ', $range.head, ') {',
+                @range-str.push( [~] $indent, 'if (cp >= ', $range[0], ') {',
                 ($inc-diff != 1 ?? ' return_val -= ' ~ $inc-diff ~ ';' !! '') );
                 $indent ~= $tabstop;
-                @range-str.push: $indent ~ 'if (cp <= ' ~ $range.tail ~ ') return ' ~ %point-index{$range.head} ~ ';';
+                @range-str.push: $indent ~ 'if (cp <= ' ~ $range.tail ~ ') return ' ~ %point-index{$range[0]} ~ ';';
             }
             else {
-                my $point-index-var = %point-index{$range.head};
+                my $point-index-var = %point-index{$range[0]};
                 for ^$range.elems {
                     @mapping.push: %point-index{ $range[$_] };
                 }
@@ -701,7 +694,7 @@ sub make-point-index (:$less) {
         }
         else {
             if $range.elems > $min-elems {
-                @range-str.push( [~] $indent, 'if (cp >= ', $range.head, ') {',
+                @range-str.push( [~] $indent, 'if (cp >= ', $range[0], ') {',
                 ($inc-diff != 1 ?? ' return_val -= ' ~ $inc-diff ~ ';' !! '') );
                 $indent ~= $tabstop;
                 @range-str.push: $indent ~ 'if (cp <= ' ~ $range.tail ~ ') return BITFIELD_DEFAULT;';
@@ -713,20 +706,17 @@ sub make-point-index (:$less) {
             }
         }
     }
-    while $indent.chars {
+    while $indent {
         @range-str.push: $indent ~ '}';
         $indent = ' ' x ($indent.chars - $tabstop.chars);
     }
-    @range-str.push: 'return point_index[return_val];';
-    @range-str.push: '}' ~ "\n";
-    #say "Range str: ", @range-str.join("\n");
+    @range-str.append: 'return point_index[return_val];', '}' ~ "\n";
 
-    my $string = @mapping.join(',');
-    my int $chars = nqp::chars($string);
-    say "Adding newlines every 70-79 chars";
-    $string .= break-into-lines(',');
-    say now - $t1 ~ "Took this long to concat points";
-    my $mapping-str = ("#define max_bitfield_index $point-max\n$type point_index[", @mapping.elems, "] = \{\n    ", $string, "\n\};\n").join;
+    say "Took this long to concat points: ", now - $t1;
+    my $mapping-str = ( "#define max_bitfield_index $point-max\n$type point_index[",
+        @mapping.elems, "] = \{\n    ",
+        @mapping.join(',').break-into-lines, "\n\};\n"
+        ).join;
     $mapping-str ~ @range-str.join("\n");
 }
 sub make-bitfield-rows {

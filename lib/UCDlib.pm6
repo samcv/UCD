@@ -11,18 +11,6 @@ my $prefix = 'const static ';
 my Str $UNIDATA-folder = "UNIDATA";
 my Str $snippet-folder = 'snippets';
 augment class Str {
-    multi method split-trim ( Str $delimiter, Int $limit? ) {
-        $limit ?? self.split($delimiter, $limit).».trim
-               !! self.split($delimiter).».trim;
-    }
-    multi method split-trim ( @needles, Int $limit? ) {
-        $limit ?? self.split(@needles, $limit).».trim
-               !! self.split(@needles).».trim;
-    }
-    multi method split-trim ( Regex $regex, Int $limit? ) {
-        $limit ?? self.split($regex, $limit).».trim
-               !! self.split($regex).».trim;
-    }
     method break-into-lines ( Str $breakpoint ) {
         my $copy = self;
         $copy ~~ s:g/(.**70..79 $breakpoint)/$0\n/;
