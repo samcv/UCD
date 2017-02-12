@@ -1,8 +1,11 @@
 language: perl6
 perl6:
-    - latest
+    - moar-blead
 
 install:
     - rakudobrew build-zef
+    - zef update
     - zef --depsonly install .
+script:
     - prove -e perl6
+    - perl6 ./UCD-gen.p6
