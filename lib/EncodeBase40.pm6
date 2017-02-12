@@ -28,6 +28,7 @@ class base40-string {
         }
     }
     method set-shift-level-one ( @things where { .all ~~ Str and .elems <= 40 } ) {
+        @!shift-level-one = @things;
         for ^@!shift-level-one.elems {
             %!shift-one{@!shift-level-one[$_]} = $_;
         }
