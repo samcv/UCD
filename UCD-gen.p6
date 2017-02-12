@@ -432,7 +432,6 @@ sub skip-line ( Str $line ) is export {
     False;
 }
 sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
-    #register-binary-property(<NFD_QC NFC_QC NFKD_QC NFG_QC Any Bidi_Mirrored>);
     register-binary-property(<Any Bidi_Mirrored>);
     my %seen-ccc = nqp::hash;
     my %seen-gc = nqp::hash;
@@ -444,12 +443,6 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
     my $t1 = now;
     for slurp-lines $file {
         next if skip-line($_);
-        #`{{
-        my @parts = nqp::split(';', $_);
-        my ($code-str, $name, $gencat, $ccclass, $bidiclass, $decmpspec,
-            $num1, $num2, $num3, $bidimirrored, $u1name, $isocomment,
-            $suc, $slc, $stc) = @parts;
-        }}
         my ($code-str, $name, $gencat, $ccclass, $bidiclass, $decmpspec,
             $num1, $num2, $num3, $bidimirrored, $u1name, $isocomment,
             $suc, $slc, $stc) = nqp::split(';', $_);
@@ -462,17 +455,6 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
             bindkey(%hash, @gc[1], nqp::substr($gencat, 1, 1));
             bindkey(%hash, 'General_Category', $gencat);
             bindkey(%seen-gc, $gencat, True);
-            #if nqp::existskey(%seen-gc, $gencat) {
-            #    %hash{@gc[0]} = atkey2(%seen-gc, $gencat, @gc[0]);
-            #    %hash{@gc[1]} = atkey2(%seen-gc, $gencat, @gc[1]);
-            #}
-            #else {
-
-                #my $h := nqp::hash;
-                #bindkey($h, @gc[0], %hash{@gc[0]});
-                #bindkey($h, @gc[1], %hash{@gc[1]});
-                #bindkey(%seen-gc, $gencat, $h);
-            #}
         }
         if $ccclass {
             bindkey(%seen-ccc, $ccclass, True);
@@ -486,12 +468,8 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
         # We may not need to set the name in the hash in case we only rely on %names
         bindkey(%hash, 'name', $name) if str-isn't-empty($name);
 
-        #`( For now these are flipped instead of setting this here
-        %hash<NFD_QC>  = True;
-        %hash<NFC_QC>  = True;
-        %hash<NFKD_QC> = True;
-        %hash<NFG_QC>  = True;
-        #`)
+        #`( These eventually should eventually be flipped but for now don't
+            set NFD_QC NFC_QC, NFG_QC, NFKD_QC or NFG_QC here at least #`)
         bindkey(%hash, 'Any', True);
         bindkey(%hash, 'Bidi_Mirrored', True) if starts-with($bidimirrored, 'Y');
 
@@ -548,6 +526,7 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
         $gc_0-seen.saw(@letters[0]);
         $gc_1-seen.saw(@letters[1]);
     }
+    register-binary-property(<Any Bidi_Mirrored>);
     set-pvalue-seen("Canonical_Combining_Class", 0, %seen-ccc);
 }
 sub set-pvalue-seen (Str:D $property, $negname, %hash) {
@@ -592,9 +571,6 @@ sub apply-pv-to-range ($range-str, Str $pname, $value) is raw {
 }
 sub apply-pv-to-cp (int $cp, Str $pname, $value) is raw {
     my \cp_s = base10_I($cp);
-    #dump %points{0xAC01} if $cp == 0xAC00;
-    #dump %points{0xAC00} if $cp == 0xAC00;
-    #say $cp.fmt("apply-pv-to-cp cp: %X") if issue-prop($pname);
     if !existskey(%points, cp_s) {
         bindkey(%points, cp_s, nqp::hash);
     }
@@ -611,14 +587,6 @@ sub apply-pv-to-cp (int $cp, Str $pname, $value) is raw {
             )
         ), $pname, $value
     );
-    #say %points{$cp}{$pname};
-    #nqp::atkey(%points, $cp, Pair.new($pname, $value));
-    #bindkey(%points, $pname, $value);
-    #say '%points{', $cp, '}:  ', Dump %points{$cp};
-    #%points{$cp}{$pname} = $value;
-    #dump %points{0xAC01} if $cp == 0xAC00;
-    #dump %points{0xAC00} if $cp == 0xAC00;
-
 }
 sub apply-hash-to-cp (Int $cp, Hash $hashy) is raw {
     my str $cp_s = base10_I($cp);
@@ -724,30 +692,7 @@ sub make-point-index (:$less) {
     say "Took ", $BOLD, now - $t0, $RESET, " seconds to compute point_index ranges";
     my $dump-count = 0;
     my Int $point-max = %points.keys.sort(-*.Int)[0].Int;
-    #say "point-max $point-max";
     my Str $type = compute-type($bin-index + 1);
-    #`{{
-    my int $bin-index_i = nqp::unbox_i($bin-index);
-    my $mapping := nqp::list_s;
-    my @rows;
-    my $i := nqp::add_i(0, 0);
-    for 0..$point-max -> $i {
-        my $point_s := base10_I_decont($i);
-        nqp::if(existskey(%point-index, $point_s),
-            # if
-            nqp::push_s($mapping, atkey(%point-index, $point_s)),
-            # XXX for now let's denote things that have no value with 1 more than max index
-            # else
-            nqp::push_s($mapping,
-                atkey(%point-index,
-                    base10_I( nqp::add_i( $bin-index_i, 1)
-                    )
-                )
-            )
-        );
-    }
-    spurt "mapping.txt", nqp::join("\n", $mapping);
-    #`}}
     my $t1 = now;
     my Cool:D @mapping;
     my $min-elems = 10;
@@ -758,8 +703,6 @@ sub make-point-index (:$less) {
     for %points-ranges.sort(*.key.Int) {
         my $range-no = .key;
         my $range = .value;
-        #say "range-no ", $range-no;
-        #say "range[0] ", $range[0];
         my $inc-diff = $range.tail - $range.head + 1;
         my $what = 0;
         if %point-index{$range.head}:exists {
@@ -772,13 +715,6 @@ sub make-point-index (:$less) {
             else {
                 my $point-index-var = %point-index{$range.head};
                 for ^$range.elems {
-                    #`(
-                    die "point-index-var: $point-index-var, point-index\{$range\[$_\]\}: {%point-index{$range[$_]}}"
-                        if $point-index-var != %point-index{$range[$_]};
-                    dump $range-no;
-                    dump $range;
-                    say '$range[', $_, ']: ', $range[$_], ' %point-index{', $range[$_], '}: ', %point-index{$range[$_]}.perl;
-                    #`)
                     @mapping.push: %point-index{ $range[$_] };
                 }
             }
