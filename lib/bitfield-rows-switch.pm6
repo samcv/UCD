@@ -4,7 +4,7 @@ sub get-points-ranges (%point-index) is export {
     my $saw = '';
     my int $i = -1;
     my int $point-no = -1;
-    #%ranges<0> = [];
+    %ranges<0> = [];
     for %point-index.keys.sort(*.Int) -> $cp {
         #say "start point-no: $point-no key $cp" if $debug;
         $point-no++;
@@ -15,19 +15,19 @@ sub get-points-ranges (%point-index) is export {
             #say "Between this and the next one there are ", $between if $debug;
             $i++;
             if $between == 1 {
-                push %ranges{$i}, $point-no;
+                %ranges{$i}.push: $point-no;
             }
             else {
                 #say $range if $debug;
                 for ($point-no)..($point-no + $between - 1) {
                     #say $_ if $debug;
-                    push %ranges{$i}, $_;
+                    %ranges{$i}.push: $_;
                 }
             }
             $point-no += $cp - $point-no;
         }
         if $saw eq %point-index{$cp} {
-            push %ranges{$i}, $cp;
+            %ranges{$i}.push: $cp;
         }
         else {
             $saw = %point-index{$cp};
