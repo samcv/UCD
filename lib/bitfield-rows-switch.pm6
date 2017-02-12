@@ -4,7 +4,7 @@ sub get-points-ranges (%point-index) is export {
     my $saw = '';
     my $i = -1;
     my $point-no = -1;
-    my @keys = %point-index.keys.sort(+*);
+    my @keys = %point-index.keys.sort(*.Int);
     for ^@keys.elems -> $elem {
         my $cp = @keys[$elem];
         say "start point-no: $point-no key $cp" if $debug;

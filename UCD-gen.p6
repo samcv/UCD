@@ -761,16 +761,17 @@ sub make-point-index (:$less) {
         my $range = .value;
         #say "range-no ", $range-no;
         #say "range[0] ", $range[0];
-        my $diff = $range.tail - $range[0];
-        if %point-index{$range[0]}:exists {
+        my $inc-diff = $range.tail - $range.head + 1;
+        my $what = 0;
+        if %point-index{$range.head}:exists {
             if $range.elems > $min-elems {
-                @range-str.push( [~] $indent, 'if (cp >= ', $range[0], ') {',
-                ($diff != 0 ?? ' return_val -= ' ~ $diff + 1 ~ ';' !! '') );
+                @range-str.push( [~] $indent, 'if (cp >= ', $range.head, ') {',
+                ($inc-diff != 1 ?? ' return_val -= ' ~ $inc-diff ~ ';' !! '') );
                 $indent ~= $tabstop;
-                @range-str.push: $indent ~ 'if (cp <= ' ~ $range[*-1] ~ ') return ' ~ %point-index{$range[0]} ~ ';';
+                @range-str.push: $indent ~ 'if (cp <= ' ~ $range.tail ~ ') return ' ~ %point-index{$range.head} ~ ';';
             }
             else {
-                my $point-index-var = %point-index{$range[0]};
+                my $point-index-var = %point-index{$range.head};
                 for ^$range.elems {
                     #`(
                     die "point-index-var: $point-index-var, point-index\{$range\[$_\]\}: {%point-index{$range[$_]}}"
@@ -786,10 +787,10 @@ sub make-point-index (:$less) {
         else {
             if $range.elems > $min-elems {
                 #say "donet exist";
-                @range-str.push( [~] $indent, 'if (cp >= ', $range[0], ') {',
-                ($diff != 0 ?? ' return_val -= ' ~ $diff + 1 ~ ';' !! '') );
+                @range-str.push( [~] $indent, 'if (cp >= ', $range.head, ') {',
+                ($inc-diff != 1 ?? ' return_val -= ' ~ $inc-diff ~ ';' !! '') );
                 $indent ~= $tabstop;
-                @range-str.push: $indent ~ 'if (cp <= ' ~ $range[*-1] ~ ') return BITFIELD_DEFAULT;';
+                @range-str.push: $indent ~ 'if (cp <= ' ~ $range.tail ~ ') return BITFIELD_DEFAULT;';
             }
             else {
                 for ^$range.elems {
@@ -802,7 +803,7 @@ sub make-point-index (:$less) {
         @range-str.push: $indent ~ '}';
         $indent = ' ' x ($indent.chars - $tabstop.chars);
     }
-    @range-str.push: 'return return_val;';
+    @range-str.push: 'return point_index[return_val];';
     @range-str.push: '}' ~ "\n";
     #say "Range str: ", @range-str.join("\n");
 

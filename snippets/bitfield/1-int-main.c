@@ -1,7 +1,7 @@
 /* Returns the value stored in the bitfield for the specified cp */
 #define get_cp_raw_value(cp, propname) \
 mybitfield[ \
-    point_index[get_bitfield_offset(cp)] \
+    get_bitfield_offset(cp) \
 ].propname
 
 /* Returns a Boolean property's value */
