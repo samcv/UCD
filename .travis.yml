@@ -1,6 +1,6 @@
 language: perl6
 perl6:
-    - moar-blead
+    - latest
 
 install:
     - rakudobrew build-zef
