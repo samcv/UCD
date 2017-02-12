@@ -332,18 +332,14 @@ sub DerivedNumericValues ( Str $filename ) {
 sub binary-property ( Int $column, Str $filename ) {
     my $t1 = now;
     my %props-seen = nqp::hash;
-    my $property := '';
     for slurp-lines($filename) {
         next if skip-line($_);
-        my @parts = .split-trim([';','#'], $column + 2);
-        $property := @parts[$column];
-        nqp::bindkey(%props-seen, $property, True);
-        #%props-seen{$property} = True unless %props-seen{$property};
+        nqp::bindkey(%props-seen,
         apply-pv-to-range(
-            @parts[0], # Range/Codepoint
-            $property, # Property
-            True       # Property Value
-        );
+         |.split([';','#'], 3).head(2).».trim,
+        # Range, # Property Name
+          True       # Property Value
+        ), True);
     }
     say "Took {now - $t1} seconds to process $filename binary prop";
     register-binary-property(%props-seen.keys.sort(&[unicmp]));
@@ -592,7 +588,7 @@ sub apply-pv-to-range ($range-str, Str $pname, $value) is raw {
         die "Unknown range '$range-str'";
         return False;
     }
-    return True;
+    return $pname;
 }
 sub apply-pv-to-cp (int $cp, Str $pname, $value) is raw {
     my \cp_s = base10_I($cp);
