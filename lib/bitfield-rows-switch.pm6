@@ -11,13 +11,10 @@ sub get-points-ranges (%point-index) is export {
     my int $point-no = -1;
     %ranges<0> = [];
     for %point-index.keys.sort(*.Int) -> $cp {
-        #say "start point-no: $point-no key $cp" if $debug;
         $point-no++;
         # This code path is taken if there are noncontiguous gaps in the ranges.
         # We populate the ranges hash with these missing values.
         if $cp != $point-no {
-            #say "missing one" if $debug;
-            #say "next one is ", @keys[$elem] if $debug;
             my $between = $cp - $point-no;
             $between == 1
             ?? %ranges{++$i}.push: $point-no
