@@ -13,12 +13,13 @@ my @array = "CAPITAL","LETTER","LATIN","DIGIT","PARENTHESIS","SIGN","SMALL",
 my $string = 'HERE IS A STRING-';
 my $one_o = base40-string.new;
 $one_o.push($string);
-#is-deeply $one_o.join(","), "13018,9489,31881,59980,29174,12720";
+is-deeply $one_o.join(","), "13018,9489,31881,59980,29174,12720";
 my $two_o = base40-string.new;
 $two_o.set-shift-level-one(@array);
 $two_o.push('RIGHT');
 say $two_o.done;
 is $two_o.join(','), 63280;
+done-testing;
 #say $two_o.join(',');
 #`{{
 #is $one_o.elems, 6;

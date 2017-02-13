@@ -17,8 +17,8 @@ class base40-string {
     has %!shift-one;
     has %!base;
     has $!num_encoded_codepoints = 0;
-    my Array $indices;
-    my $base40-nums := nqp::list_s;
+    has Array $indices;
+    has $base40-nums = nqp::list_s;
     method TWEAK {
         for ^@!bases.elems {
            %!base{@!bases[$_]} = $_;
@@ -50,7 +50,7 @@ class base40-string {
     method get-base40 {
         note "Running get-base40";
         if $!to-encode-str.defined and $!to-encode-str ne '' {
-            if nqp::elems($base40-nums) == 0 {
+            if nqp::elems(nqp::decont($base40-nums)) == 0 {
                 $base40-nums := self.encode-base40-string($!to-encode-str);
             }
             else {
