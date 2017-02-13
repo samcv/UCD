@@ -14,6 +14,7 @@ class base40-string {
     has @.shift-level-one;
     has Str $.to-encode-str;
     has Str $.encoded-str;
+    has @.to-encode-str-array;
     has %!shift-one;
     has %!base;
     has $!num_encoded_codepoints = 0;
@@ -34,10 +35,12 @@ class base40-string {
         }
     }
     multi method push {
-        $!to-encode-str ~= "\0";
+        @!to-encode-str-array.push('');
+        #$!to-encode-str ~= "\0";
     }
     multi method push ( Str:D $string ) {
-        $!to-encode-str ~= $string ~ "\0";
+        @!to-encode-str-array.push: $string;
+        #$!to-encode-str ~= $string ~ "\0";
         if $string ne '' {
             $!num_encoded_codepoints++;
         }
@@ -45,9 +48,12 @@ class base40-string {
     method done {
         # XXX for some reason either we aren't encoding the chars right or
         # names.c will keep going unless you put an extra null
-        $!to-encode-str ~= "\0";
+        my $null = "\0";
+        $!to-encode-str ~~ s/ "\0"* $/$null/;
     }
     method get-base40 {
+        $!to-encode-str = @!to-encode-str-array.join("\0") ~ "\0";
+        @!to-encode-str-array = [];
         note "Running get-base40";
         if $!to-encode-str.defined and $!to-encode-str ne '' {
             if nqp::elems(nqp::decont($base40-nums)) == 0 {
@@ -69,10 +75,8 @@ class base40-string {
     method encode-base40-string ( Str $string is copy ) {
         if @!shift-level-one {
             for @!shift-level-one -> $s_string {
-                if $string.contains($s_string) {
-                    my $replacement = '{' ~ %!shift-one{$s_string} ~ '}';
-                    $string ~~ s:g/$s_string/$replacement/;
-                }
+                my $replacement = '{' ~ %!shift-one{$s_string} ~ '}';
+                $string ~~ s:g/$s_string/$replacement/;
             }
 
         }
@@ -86,25 +90,29 @@ class base40-string {
         sub items-elems {
             $items_i - $items_f - 1;
         }
+        my str $item;
         while $items_i < $items_f {
-            my str $item = nqp::substr($string, $items_i++, 1);
+            $item = nqp::substr($string, $items_i++, 1);
             # This saves the indexes of names
-            if $item eq "\0" {
-                if $counter % 2 == 0 {
+            if nqp::iseq_s($item, "\0") {
+                if $counter %% 2 {
                     $indices.push(nqp::elems($coded-nums));
                 }
                 $counter++;
             }
             # This is a shifted value, so process it as such
-            if $item eq '{' {
-                my str $item = nqp::substr($string, $items_i++, 1);;
+            elsif nqp::iseq_s($item, '{') {
+                #my str $item = nqp::substr($string, $items_i++, 1);
+                my str $item;
                 my str $str;
                 # Grab the numbers up until the '}'
-                while $item ne '}' {
-                    $str ~= $item;
-                    $item = nqp::substr($string, $items_i++, 1);
-                }
-                for %!base{@!bases[@!bases.end]}, $str.Int -> $num {
+                # distance of the string to pull out (between the brackets)
+                my $distance =  nqp::index($string, '}', $items_i) - $items_i;
+                $str = nqp::substr($string, $items_i, $distance);
+                $items_i += 1 + $distance;
+                $item = nqp::substr($string, $items_i, 1);
+
+                for @!bases.end, $str.Int -> $num {
                     $triplet += $num * $i;
                     # We have our shift value now, so add it to the @coded-nums
                     # Push the shift character
@@ -112,7 +120,6 @@ class base40-string {
                     # XXX Maybe we need to not check if elems == 0 since we may have pulled everything out?
                     if $i < 1 {
                         $i = 40 ** 2;
-
                         nqp::push_s($coded-nums, nqp::base_I(nqp::decont($triplet), 10));
                         $triplet = 0;
                     }
@@ -123,7 +130,7 @@ class base40-string {
                 }
                 next;
             }
-            die '%!base: ' ~ %!base.perl ~ "Can't find this letter in table “$item”" unless %!base{$item}:exists;
+            #die '%!base: ' ~ %!base.perl ~ "Can't find this letter in table “$item”" unless %!base{$item}:exists;
             $triplet += %!base{$item} * $i;
             $i = $i div 40;
             if $i < 1 or items-elems() == 0 {
