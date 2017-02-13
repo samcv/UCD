@@ -678,7 +678,7 @@ sub make-enums {
     @enums.join("\n");
 }
 sub make-point-index (:$less) {
-    note $BOLD, "Making point_index…\n", $RESET;
+    note $BOLD, "Making ", $BLUE, "point_index", $RESET, "…";
     my $t0 = now;
     my %points-ranges = get-points-ranges(%point-index);
     say "Took ", $BOLD, now - $t0, $RESET, " seconds to compute point_index ranges";
@@ -690,17 +690,21 @@ sub make-point-index (:$less) {
     my $min-elems = 10;
     my str @range-str = 'int get_bitfield_offset (uint32_t cp) {',
         '#define BITFIELD_DEFAULT ' ~ $bin-index + 1, 'int return_val = cp;';
+    my str @range-str2;
     my $indent = '';
     my $tabstop = ' ';
+    my $additive-diff = 0;
     for %points-ranges.sort(*.key.Int) {
         my ($range-no, $range) = (.key, .value);
         my $inc-diff = $range.tail - $range[0] + 1;
         if %point-index{$range[0]}:exists {
             if $range.elems > $min-elems {
+                $additive-diff += $inc-diff;
                 @range-str.push( [~] $indent, 'if (cp >= ', $range[0], ') {',
                 ($inc-diff != 1 ?? ' return_val -= ' ~ $inc-diff ~ ';' !! '') );
                 $indent ~= $tabstop;
                 @range-str.push: $indent ~ 'if (cp <= ' ~ $range.tail ~ ') return ' ~ %point-index{$range[0]} ~ ';';
+                @range-str2.push: '{' ~ ($range[0], $range.tail,  %point-index{$range[0]}, $additive-diff).join(',') ~ '}';
             }
             else {
                 my $point-index-var = %point-index{$range[0]};
@@ -711,10 +715,12 @@ sub make-point-index (:$less) {
         }
         else {
             if $range.elems > $min-elems {
+                $additive-diff += $inc-diff;
                 @range-str.push( [~] $indent, 'if (cp >= ', $range[0], ') {',
                 ($inc-diff != 1 ?? ' return_val -= ' ~ $inc-diff ~ ';' !! '') );
                 $indent ~= $tabstop;
                 @range-str.push: $indent ~ 'if (cp <= ' ~ $range.tail ~ ') return BITFIELD_DEFAULT;';
+                @range-str2.push: '{' ~ ($range[0], $range.tail,  'BITFIELD_DEFAULT', $additive-diff).join(',') ~ '}';
             }
             else {
                 for ^$range.elems {
@@ -723,18 +729,29 @@ sub make-point-index (:$less) {
             }
         }
     }
+    my $struct = Q:to/END/;
+
+    struct table  {
+        uint32_t low;
+        uint32_t high;
+        uint32_t bitfield_row;
+        uint32_t miss;
+    };
+    typedef struct table table;
+    END
     while $indent {
         @range-str.push: $indent ~ '}';
         $indent = ' ' x ($indent.chars - $tabstop.chars);
     }
-    @range-str.append: 'return point_index[return_val];', '}' ~ "\n";
-
+    @range-str.append: 'return point_index[return_val];', '}' ~ "\na";
     say "Took this long to concat points: ", now - $t1;
     my $mapping-str = ( "#define max_bitfield_index $point-max\n$type point_index[",
         @mapping.elems, "] = \{\n    ",
         @mapping.join(',').break-into-lines(','), "\n\};\n"
         ).join;
-    $mapping-str ~ @range-str.join("\n");
+    return [~] $mapping-str, @range-str.join("\n"), $struct,
+               compose-array( $prefix ~ 'table', 'sorted_table', @range-str2),
+               slurp-snippets('bitfield', 'get_offset_new');
 }
 sub make-bitfield-rows {
     note "Making bitfield-rows…";

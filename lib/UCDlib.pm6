@@ -7,7 +7,7 @@ constant $BOLD_OFF = BOLD_OFF;
 constant $BLUE = color('blue');
 constant $RESET = RESET;
 use nqp;
-my $prefix = 'const static ';
+constant $prefix = 'const static ';
 my Str $UNIDATA-folder = "UNIDATA";
 my Str $snippet-folder = 'snippets';
 augment class Str {

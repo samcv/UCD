@@ -145,7 +145,7 @@ class base40-string {
         }
         my $str ~= compose-array( "char", "ctable", @!bases.elems, @c_table.join(',') );
         if @!shift-level-one {
-            say "detected shift level one in making c table";
+            note "detected shift level one in making c table";
             for @!shift-level-one {
                 @s_table.push(qq["$_"]);
             }
@@ -196,16 +196,16 @@ sub decode-base40-nums ( @bases, @coded-nums is copy, :@shift-one? ) is export {
         my $shift = False;
         for (1600, 40, 1) -> $j {
             my $char = $num.Int div $j;
-            #say "char $char";
+            #note "char $char";
             last if $char == 0 and !$shift and @coded-nums.elems == 0;
             $num -= $char * $j;
             # If it's 39 then it's a shift value
             if $char == 39 and !$shift {
-                say "setting shift on";
+                note "setting shift on";
                 $shift = True;
             }
             elsif $shift {
-                say "Trying to push char $char @shift-one[$char]";
+                note "Trying to push char $char @shift-one[$char]";
                 @decoded-chars.push(@shift-one[$char]);
                 $shift = False;
             }
