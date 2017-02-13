@@ -743,7 +743,7 @@ sub make-point-index (:$less) {
         @range-str.push: $indent ~ '}';
         $indent = ' ' x ($indent.chars - $tabstop.chars);
     }
-    @range-str.append: 'return point_index[return_val];', '}' ~ "\na";
+    @range-str.append: 'return point_index[return_val];', '}' ~ "\n";
     say "Took this long to concat points: ", now - $t1;
     my $mapping-str = ( "#define max_bitfield_index $point-max\n$type point_index[",
         @mapping.elems, "] = \{\n    ",
