@@ -86,7 +86,6 @@ int main (void) {
     int i;
     int ret;
     get_cp_name(0x20); /* U+20 SPACE */
-    return 0;
     for (i = 0; i <= HIGHEST_NAME_CP; i++) {
         ret = get_uninames(ds.out_buf, cp);
         if (ret == 0) {

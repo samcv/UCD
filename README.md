@@ -1,3 +1,7 @@
+* [UCD-gen.p6](#ucd-gen.p6)
+* [lib/UCDlib.pm6](#lib/ucdlib.pm6)
+* [lib/bitfield-rows-switch.pm6](#lib/bitfield-rows-switch.pm6)
+
 [![Build Status](https://travis-ci.org/samcv/UCD.svg?branch=master)](https://travis-ci.org/samcv/UCD)
 
 ## What
@@ -19,36 +23,36 @@ Running `make` will build `bitfield` and `names` and put them in `./build`
 
 # UCD-gen.p6
 
-%names
-------
+`%names`
+--------
 
 Unicode Name hash for generating the name table
 
-%binary-properties
-------------------
+`%binary-properties`
+--------------------
 
 Stores the binary property names
 
-%enumerated-properties
-----------------------
+`%enumerated-properties`
+------------------------
 
 Stores enum prop names and also the property codes which are just internal numbers to represent it in the C datastructure
 
-%decomp_spec
-------------
+`%decomp_spec`
+--------------
 
 Stores the decomposition data for decomposition
 
-%PropertyValueAliases %PropertyValueAliases_to
-----------------------------------------------
+`%PropertyValueAliases %PropertyValueAliases_to`
+------------------------------------------------
 
 Stores PropertyValueAliases from PropertyValueAliases.txt Used to go from short names that may be used in the data files to the full names
 
-%PropertyNameAliases %PropertyNameAliases_to
---------------------------------------------
+`%PropertyNameAliases %PropertyNameAliases_to`
+----------------------------------------------
 
 Stores Property Aliases or Property Value Aliases to their Full Name mappings
-
+ 
 # lib/UCDlib.pm6
 
 ### sub slurp-snippets
@@ -62,7 +66,7 @@ sub slurp-snippets(
 ```
 
 Slurps files from the snippets folder and concatenates them together The first argument is the folder name inside /snippets that they are in The second argument make it only concat files which contain that string The third argument allows you to request only snippets starting with those numbers if the numbers are positive. If they are negative, it returns all snippets except those numbers. Takes a single number, or a List of numbers
-
+ 
 # lib/bitfield-rows-switch.pm6
 
 ### sub get-points-ranges

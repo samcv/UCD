@@ -22,31 +22,31 @@ sub timer (Str $name = '') {
 macro dump($x) { quasi { say {{{$x}}}.VAR.name, ": ", Dump {{{$x}}} } };
 my %points = nqp::hash;
 my %names = nqp::hash;
-=head2 %names
+=head2 C<%names>
 =para Unicode Name hash for generating the name table
 
 my %binary-properties;
-=head2 %binary-properties
+=head2 C<%binary-properties>
 =para Stores the binary property names
 
 my %enumerated-properties;
-=head2 %enumerated-properties
+=head2 C<%enumerated-properties>
 =para Stores enum prop names and also the property
 codes which are just internal numbers to represent it in the C datastructure
 
 my %decomp_spec;
-=head2 %decomp_spec
+=head2 C<%decomp_spec>
 =para Stores the decomposition data for decomposition
 
 my %PropertyValueAliases;
 my %PropertyValueAliases_to;
-=head2 %PropertyValueAliases %PropertyValueAliases_to
+=head2 C<%PropertyValueAliases %PropertyValueAliases_to>
 =para Stores PropertyValueAliases from PropertyValueAliases.txt
 Used to go from short names that may be used in the data files to the full names
 
 my %PropertyNameAliases;
 my %PropertyNameAliases_to;
-=head2 %PropertyNameAliases %PropertyNameAliases_to
+=head2 C<%PropertyNameAliases %PropertyNameAliases_to>
 =para Stores Property Aliases or Property Value Aliases to their Full Name mappings
 
 my %missing;
@@ -223,7 +223,7 @@ sub write-file ( Str $filename is copy, Str $text ) {
     $filename ~~ s/ ^ \W //;
     my $file = "$build-folder/$filename";
     if $text {
-        note "Writing $file…";
+        note $BOLD, "Writing ", $BLUE, $file, $RESET, "…";
         $file.IO.spurt($text);
     }
 }

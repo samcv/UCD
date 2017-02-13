@@ -24,7 +24,12 @@ END
 my @files = "UCD-gen.p6", "lib/UCDlib.pm6", "lib/bitfield-rows-switch.pm6";
 #say pod2markdown($=pod);
 my $text;
-for @files -> $file {
-    $text ~=  "\n# $file\n\n" ~ run("perl6",  "--doc=Markdown", $file.IO.abspath, :out).out.slurp-rest;
+my @prom = do for @files -> $file {
+    start { "\n# $file\n\n" ~ run("perl6",  "--doc=Markdown", $file.IO.abspath, :out).out.slurp-rest};
 }
-"README.md".IO.spurt($head ~ $text);
+await Promise.allof(@prom);
+"README.md".IO.spurt: [~]
+    @files.map({ "* [$_](#{.subst(' ', '-').lc})"}).join("\n"),
+    "\n\n", $head,
+    @prom.map(*.result);
+#"README.md".IO.spurt($head ~ $text);
