@@ -7,7 +7,7 @@ names: $(source_folder)/names.c
 bitfield-debug: source/bitfield.c
 	mkdir -p $(build_folder) && cd $(source_folder) && gcc $(debug_flags) bitfield.c -o ../$(build_folder)/bitfield
 bitfield: source/bitfield.c
-	mkdir -p $(build_folder) && cd $(source_folder) && gcc -Os bitfield.c -o ../$(build_folder)/bitfield
+	mkdir -p $(build_folder) && cd $(source_folder) && gcc -O3 bitfield.c -o ../$(build_folder)/bitfield
 names-debug: source/names.c
 	mkdir -p $(build_folder) && cd $(source_folder) && gcc $(debug_flags) names.c -o ../$(build_folder)/names
 clean:

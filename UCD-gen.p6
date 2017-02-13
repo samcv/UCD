@@ -687,7 +687,7 @@ sub make-point-index (:$less) {
     my $t1 = now;
     my Cool:D @mapping;
     my $min-elems = 10;
-    my str @range-str = 'int get_bitfield_offset (uint32_t cp) {',
+    my str @range-str = 'const static int get_bitfield_offset (uint32_t cp) {',
         '#define BITFIELD_DEFAULT ' ~ $bin-index + 1, 'int return_val = cp;';
     my str @range-str2;
     my $indent = '';
@@ -752,59 +752,14 @@ sub make-point-index (:$less) {
                compose-array( $prefix ~ 'table', 'sorted_table', @range-str2),
                slurp-snippets('bitfield', 'get_offset_new');
 }
-sub make-bitfield-rows {
-    note "Making bitfield-rows…";
-    my str @code-sorted-props;
-    my $code-sorted-props := nqp::list_s;
-    # Create the order of the struct
-    @bitfield-h.push("struct binary_prop_bitfield  \{");
-    my $bin-prop-nqp := nqp::hash;
-    #| Stores an array of Pairs where the key is the property name and the
-    #| value is the bitwidth. It then passes it off to BitfieldPacking module
-    my @list-for-packing;
-    say @list-for-packing.WHY;
-    for %binary-properties.keys.sort(&[unicmp]) -> $bin {
-        @list-for-packing.push($bin => 1);
-    }
-    my $enum-prop-nqp := nqp::hash;
-    for %enumerated-properties.sort({ $^a.key unicmp $^b.key }) {
-        @list-for-packing.push(.key => .value.bitwidth);
-    }
-    my @packed-enums = compute-packing(@list-for-packing);
-    say $BOLD, "Packed-enums: ", $BOLD_OFF, @packed-enums.perl;
-    for @packed-enums.».key -> $property {
-        my $bitwidth;
-        if %enumerated-properties{$property}:exists {
-            $bitwidth = %enumerated-properties{$property}.bitwidth;
-            my $this-prop := nqp::hash;
-            my $built = %enumerated-properties{$property}.build;
-            for $built.kv -> $key, $value {
-                my $type = $value.^name;
-                die if $type ne 'Str';
-                nqp::bindkey($this-prop, $key, $value);
-            }
-            nqp::bindkey($enum-prop-nqp, $property, $this-prop);
-        }
-        elsif %binary-properties{$property}:exists {
-            $bitwidth = 1;
-            nqp::bindkey($bin-prop-nqp, $property, '1');
-        }
-        else {
-            die;
-        }
-        @code-sorted-props.push($property);
-        @bitfield-h.push("    unsigned int $property :$bitwidth;");
-    }
-    @bitfield-h.push("\};");
-    @bitfield-h.push("typedef struct binary_prop_bitfield binary_prop_bitfield;");
-    my $bitfield-rows := nqp::list_s;
-    my %bitfield-rows-seen = nqp::hash;
-    my $t1 = now;
+sub dedupe-rows (@code-sorted-props, Mu $enum-prop-nqp, Mu $bin-prop-nqp) is raw {
     my ($enum, $enum-prop-nqp-prop);
     my \bitfield-columns := nqp::list_s;
     my \points-point := 0;
     my str $bitfield-rows-str;
-    #my str $bin-index_s = '';
+    my %bitfield-rows-seen = nqp::hash;
+    nqp::bind($enum-prop-nqp, nqp::decont($enum-prop-nqp));
+    nqp::bind($bin-prop-nqp, nqp::decont($bin-prop-nqp));
     for %points.keys.sort(*.Int) -> $point {
         nqp::bind(bitfield-columns, nqp::list_s);
         nqp::bind(points-point, nqp::decont(nqp::atkey(%points, $point)));
@@ -855,8 +810,59 @@ sub make-bitfield-rows {
         );
 
     }
+    return %bitfield-rows-seen;
+}
+sub make-bitfield-rows {
+    note "Making bitfield-rows…";
+    my str @code-sorted-props;
+    my $code-sorted-props := nqp::list_s;
+    # Create the order of the struct
+    @bitfield-h.push("struct binary_prop_bitfield  \{");
+    my $bin-prop-nqp := nqp::hash;
+    #| Stores an array of Pairs where the key is the property name and the
+    #| value is the bitwidth. It then passes it off to BitfieldPacking module
+    my @list-for-packing;
+    for %binary-properties.keys.sort(&[unicmp]) -> $bin {
+        @list-for-packing.push($bin => 1);
+    }
+    my $enum-prop-nqp := nqp::hash;
+    for %enumerated-properties.sort({ $^a.key unicmp $^b.key }) {
+        @list-for-packing.push(.key => .value.bitwidth);
+    }
+    my @packed-enums = compute-packing(@list-for-packing);
+    say $BOLD, "Packed-enums: ", $BOLD_OFF, @packed-enums.perl;
+    for @packed-enums.».key -> $property {
+        my $bitwidth;
+        if %enumerated-properties{$property}:exists {
+            $bitwidth = %enumerated-properties{$property}.bitwidth;
+            my $this-prop := nqp::hash;
+            my $built = %enumerated-properties{$property}.build;
+            for $built.kv -> $key, $value {
+                my $type = $value.^name;
+                die if $type ne 'Str';
+                nqp::bindkey($this-prop, $key, $value);
+            }
+            nqp::bindkey($enum-prop-nqp, $property, $this-prop);
+        }
+        elsif %binary-properties{$property}:exists {
+            $bitwidth = 1;
+            nqp::bindkey($bin-prop-nqp, $property, '1');
+        }
+        else {
+            die;
+        }
+        @code-sorted-props.push($property);
+        @bitfield-h.push("    unsigned int $property :$bitwidth;");
+    }
+    @bitfield-h.push("\};");
+    @bitfield-h.push("typedef struct binary_prop_bitfield binary_prop_bitfield;");
+    my $t1 = now;
+    my %bitfield-rows-seen = dedupe-rows(@code-sorted-props, $enum-prop-nqp, $bin-prop-nqp);
+
+
     my $t2 = now;
     say "Finished computing all rows, took {now - $t1}. Now creating the final unduplicated version.";
+    my $bitfield-rows := nqp::list_s;
     for %bitfield-rows-seen.sort(*.value.Int).».kv -> ($row-str, $index) {
         nqp::push_s($bitfield-rows, '    {' ~ $row-str ~ "\},/* index $index */");
     }

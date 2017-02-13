@@ -10,3 +10,4 @@ script:
     - prove -e perl6
     - perl6 ./UCD-download.p6
     - perl6 ./UCD-gen.p6
+    - make
