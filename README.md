@@ -1,6 +1,6 @@
-* [UCD-gen.p6](#ucd-gen.p6)
-* [lib/UCDlib.pm6](#lib/ucdlib.pm6)
-* [lib/bitfield-rows-switch.pm6](#lib/bitfield-rows-switch.pm6)
+* [UCD-gen.p6](#ucdgenp6)
+* [lib/UCDlib.pm6](#libucdlibpm6)
+* [lib/bitfield-rows-switch.pm6](#libbitfieldrowsswitchpm6)
 
 [![Build Status](https://travis-ci.org/samcv/UCD.svg?branch=master)](https://travis-ci.org/samcv/UCD)
 

@@ -29,7 +29,7 @@ my @prom = do for @files -> $file {
 }
 await Promise.allof(@prom);
 "README.md".IO.spurt: [~]
-    @files.map({ "* [$_](#{.subst(' ', '-').lc})"}).join("\n"),
+    @files.map({ "* [$_](#{.trans([' ', '!'..'/'] => ['-', '']).lc})"}).join("\n"),
     "\n\n", $head,
     @prom.map(*.result);
 #"README.md".IO.spurt($head ~ $text);

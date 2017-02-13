@@ -3,7 +3,7 @@ use v6;
 use Test;
 use lib 'lib';
 my @modules = 'lib'.IO.dir.».basename.grep({.starts-with('.').not}).».subst(/ '.' .* $/, '');
-my @files = dir.».basename.grep({ .ends-with('.p6') }); #'UCD-gen.p6';
+my @files = 'UCD-gen.p6';
 plan @modules.elems;
 for @modules {
     use-ok $_, "Can ‘use’ $_";

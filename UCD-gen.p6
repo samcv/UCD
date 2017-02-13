@@ -55,7 +55,6 @@ constant @gc = 'General_Category_1', 'General_Category_2';
 my %point-index = nqp::hash;
 my $debug-global = False;
 my int $bin-index = -1;
-
 sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
            Bool:D :$debug = False, Bool:D :$names-only = False, Bool:D :$no-UnicodeData = False,
            Bool:D :$no-names = False, Str :$only? ) {
