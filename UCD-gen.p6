@@ -10,6 +10,7 @@ use seenwords; use EncodeBase40;
 use BitfieldPacking; use bitfield-rows-switch;
 constant $build-folder = "source";
 constant $snippets-folder = "snippets";
+constant $myindent = ' ' x 4;
 # stores lines of bitfield.h
 our @bitfield-h;
 sub timer (Str $name = '') {
@@ -67,7 +68,7 @@ sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
     UnicodeData("UnicodeData", $less, $no-UnicodeData);
     die Dump %points unless %points{0}:exists;
     timer('UnicodeData');
-
+    my str @sorted-cp;
     unless $names-only {
         constant @enum-data =
             (1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth'),
@@ -109,17 +110,18 @@ sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
             binary-property( |$_ ) for @bin-data;
             DerivedNumericValues('extracted/DerivedNumericValues');
         }
-        tweak_nfg_qc() unless $less;
+        @sorted-cp = done-editing-points();
+        tweak_nfg_qc(@sorted-cp) unless $less;
         say now - INIT now;
     }
     unless $nomake {
         my $int-main;
         $int-main =  %enumerated-properties{'Numeric_Value_Numerator'}:exists
         ?? slurp-snippets("bitfield", "int-main")
-        !! slurp-snippets("bitfield", "int-main", -2);
+        !! slurp-snippets("bitfield", "int-main", -3);
         unless $names-only {
             my $bitfield_c = [~] slurp-snippets("bitfield", "header"),
-                make-enums(), make-bitfield-rows(), make-point-index(),
+                make-enums(), make-bitfield-rows(@sorted-cp), make-point-index(@sorted-cp),
                 $int-main;
             note "Saving bitfield.c…";
             write-file('bitfield.c', $bitfield_c);
@@ -154,6 +156,12 @@ sub PValueAliases (Str $filename, %aliases, %aliases_to?) {
             }
         }
     }
+}
+sub done-editing-points {
+    timer 'sorting cp';
+    my str @sorted = %points.keys.sort(*.Int);
+    timer 'sorting cp';
+    @sorted
 }
 class pvalue-seen {
     has %.seen-values;
@@ -382,7 +390,7 @@ sub register-binary-property (+@names) {
     note "Registering binary properties: @names.join(', ')";
 }
 sub compute-bitwidth ( Int $max ) { ($max - 1).base(2).chars }
-sub tweak_nfg_qc {
+sub tweak_nfg_qc (@sorted-cp) {
     note "Tweaking NFG_QC…";
     timer('tweak_nfg_qc');
     # See http://www.unicode.org/reports/tr29/tr29-27.html#Grapheme_Cluster_Boundary_Rules
@@ -392,7 +400,7 @@ sub tweak_nfg_qc {
         0x0E33, 0x0EB3; # some specials
     ;
     %points{$_}<NFG_QC> = False if %points{$_}:exists for @nfg_qc_no;
-    for %points.keys -> $code {
+    for @sorted-cp -> $code {
         # SpacingMark, and a couple of specials
         if (%points{$code}<General_Category>:exists and %points{$code}<General_Category> eq 'Mc')
         {
@@ -676,13 +684,13 @@ sub make-enums {
     }
     @enums.join("\n");
 }
-sub make-point-index (:$less) {
+sub make-point-index (@sorted-cp, :$less) {
     note $BOLD, "Making ", $BLUE, "point_index", $RESET, "…";
     my $t0 = now;
     my %points-ranges = get-points-ranges(%point-index);
     say "Took ", $BOLD, now - $t0, $RESET, " seconds to compute point_index ranges";
     my $dump-count = 0;
-    my Int $point-max = %points.keys.sort(-*.Int)[0].Int;
+    my Int $point-max = @sorted-cp.tail.Int;
     my Str $type = compute-type($bin-index + 1);
     my $t1 = now;
     my Cool:D @mapping;
@@ -749,10 +757,10 @@ sub make-point-index (:$less) {
         @mapping.join(',').break-into-lines(','), "\n\};\n"
         ).join;
     return [~] $mapping-str, @range-str.join("\n"), $struct,
-               compose-array( $prefix ~ 'table', 'sorted_table', @range-str2),
+               compose-array( $prefix ~ 'table', 'sorted_table', @range-str2 ),
                slurp-snippets('bitfield', 'get_offset_new');
 }
-sub dedupe-rows (@code-sorted-props, Mu $enum-prop-nqp, Mu $bin-prop-nqp) is raw {
+sub dedupe-rows (@sorted-cp, @code-sorted-props, Mu $enum-prop-nqp, Mu $bin-prop-nqp) is raw {
     my ($enum, $enum-prop-nqp-prop);
     my \bitfield-columns := nqp::list_s;
     my \points-point := 0;
@@ -760,7 +768,7 @@ sub dedupe-rows (@code-sorted-props, Mu $enum-prop-nqp, Mu $bin-prop-nqp) is raw
     my %bitfield-rows-seen = nqp::hash;
     nqp::bind($enum-prop-nqp, nqp::decont($enum-prop-nqp));
     nqp::bind($bin-prop-nqp, nqp::decont($bin-prop-nqp));
-    for %points.keys.sort(*.Int) -> $point {
+    for @sorted-cp -> $point {
         nqp::bind(bitfield-columns, nqp::list_s);
         nqp::bind(points-point, nqp::decont(nqp::atkey(%points, $point)));
         for @code-sorted-props -> $prop {
@@ -812,7 +820,7 @@ sub dedupe-rows (@code-sorted-props, Mu $enum-prop-nqp, Mu $bin-prop-nqp) is raw
     }
     return %bitfield-rows-seen;
 }
-sub make-bitfield-rows {
+sub make-bitfield-rows ( @sorted-cp ) {
     note "Making bitfield-rows…";
     my str @code-sorted-props;
     my $code-sorted-props := nqp::list_s;
@@ -856,24 +864,38 @@ sub make-bitfield-rows {
     }
     @bitfield-h.push("\};");
     @bitfield-h.push("typedef struct binary_prop_bitfield binary_prop_bitfield;");
+    my @switch-enum = $prefix ~ 'int get_prop_enum (uint32_t cp, int propcode) {';
+    my @switch      = $prefix ~ 'int get_prop_int (uint32_t cp, int propcode) {';
+    (@switch, @switch-enum)».push: $myindent ~ 'switch (propcode) {';
+    for ^@code-sorted-props.elems {
+        my $def =  "Uni_Propcode_@code-sorted-props[$_]";
+        @bitfield-h.push: "#define $def $_";
+        if %enumerated-properties{@code-sorted-props[$_]}:exists {
+            @switch-enum.append: $myindent x 2 ~ " case $def:",
+                $myindent x 3 ~ "return get_enum_prop(cp, @code-sorted-props[$_]);";
+        }
+        @switch.append: $myindent x 2 ~ " case $def:",
+            $myindent x 3 ~ "return get_cp_raw_value(cp, @code-sorted-props[$_]);";
+    }
+    (@switch, @switch-enum)».append: $myindent ~ '}', '}';
     my $t1 = now;
-    my %bitfield-rows-seen = dedupe-rows(@code-sorted-props, $enum-prop-nqp, $bin-prop-nqp);
 
-
-    my $t2 = now;
-    say "Finished computing all rows, took {now - $t1}. Now creating the final unduplicated version.";
+    my %bitfield-rows-seen = dedupe-rows(@sorted-cp, @code-sorted-props, $enum-prop-nqp, $bin-prop-nqp);
+    say "Finished computing all rows, took {now - $t1} for {@sorted-cp.elems} elems. Now creating the final unduplicated version.";
     my $bitfield-rows := nqp::list_s;
+    my $t2 = now;
     for %bitfield-rows-seen.sort(*.value.Int).».kv -> ($row-str, $index) {
         nqp::push_s($bitfield-rows, '    {' ~ $row-str ~ "\},/* index $index */");
     }
     my str $binary-struct-str = nqp::join("\n", $bitfield-rows);
     say "Took {now - $t2} seconds to join all the seen bitfield rows";
-    return qq:to/END/;
+    my $prop-bitfield = qq:to/END/;
     #include <stdio.h>
     {get-prefix()} binary_prop_bitfield mybitfield[{$bin-index + 1}] = \{
     $binary-struct-str
         \};
     END
+    return join "\n", $prop-bitfield, @switch.join("\n"), @switch-enum.join("\n"), '';
 }
 sub dump-json ( Bool $dump ) {
     note "Converting data to JSON...";
