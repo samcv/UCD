@@ -28,8 +28,17 @@ my @prom = do for @files -> $file {
     start { "\n# $file\n\n" ~ run("perl6",  "--doc=Markdown", $file.IO.abspath, :out).out.slurp-rest};
 }
 await Promise.allof(@prom);
+my @result;
+my $i = -1;
+for @prom.map(*.result).Str.lines -> $line is copy {
+    if {
+        $i++ if $line.starts-with: '```';
+        $line ~~ s/'```'/```perl6/ if $i %% 2;
+    }
+    @result.push: $line;
+}
 "README.md".IO.spurt: [~]
     @files.map({ "* [$_](#{.trans([' ', '!'..'/'] => ['-', '']).lc})"}).join("\n"),
-    "\n\n", $head,
-    @prom.map(*.result);
+    "\n\n", $head, @result.join("\n");
+
 #"README.md".IO.spurt($head ~ $text);

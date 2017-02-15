@@ -120,11 +120,13 @@ sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
         ?? slurp-snippets("bitfield", "int-main")
         !! slurp-snippets("bitfield", "int-main", -3);
         unless $names-only {
-            my $bitfield_c = [~] slurp-snippets("bitfield", "header"),
+            my $bitfield_c = [~] “#include "bitfield.h"\n”,
                 make-enums(), make-bitfield-rows(@sorted-cp), make-point-index(@sorted-cp),
                 $int-main;
             note "Saving bitfield.c…";
             write-file('bitfield.c', $bitfield_c);
+            @bitfield-h.unshift: slurp-snippets("bitfield", "header", 0);
+            @bitfield-h.push: slurp-snippets("bitfield", "header", 1);
             write-file('bitfield.h', @bitfield-h.join("\n"));
         }
         write-file('names.c', Generate_Name_List()) unless $no-UnicodeData or $no-names;
@@ -167,11 +169,24 @@ class pvalue-seen {
     has %.seen-values;
     has $.negname;
     has $!type;
+    has $!c-type;
     has %.enum;
     has $!bitwidth;
     method type {
         $!type = $!negname.WHAT.^name;
         $!type;
+    }
+    method c-type {
+        if self.name eq any(@gc) {
+            $!c-type = compute-type('char');
+        }
+        if self.type eq 'Str' {
+            $!c-type = compute-type(%!enum.keys.all.chars <= 1 ?? 'char' !! 'char *');
+        }
+        elsif self.type eq 'Int' {
+            $!c-type = compute-type(%!seen-values.elems);
+        }
+        $!c-type;
     }
     method bitwidth {
         $!bitwidth = compute-bitwidth(%!seen-values.elems);
@@ -697,6 +712,7 @@ sub make-point-index (@sorted-cp, :$less) {
     my $min-elems = 10;
     my str @range-str = 'const static int get_bitfield_offset (uint32_t cp) {',
         '#define BITFIELD_DEFAULT ' ~ $bin-index + 1, 'int return_val = cp;';
+    @bitfield-h.push: 'const static int get_bitfield_offset (uint32_t cp);';
     my str @range-str2;
     my $indent = '';
     my $tabstop = ' ';
@@ -773,9 +789,9 @@ sub dedupe-rows (@sorted-cp, @code-sorted-props, Mu $enum-prop-nqp, Mu $bin-prop
     for @sorted-cp -> $point {
         nqp::bind(bitfield-columns, nqp::list_s);
         nqp::bind(points-point, nqp::decont(nqp::atkey(%points, $point)));
-        $props-iter := nqp::clone($orig-props-iter);
+        nqp::bind($props-iter, nqp::clone($orig-props-iter));
         while nqp::elems($props-iter) {
-            $prop := nqp::shift($props-iter);
+            nqp::bind($prop, nqp::shift($props-iter));
             nqp::if( nqp::existskey(points-point, $prop), (
                 nqp::if( nqp::existskey($bin-prop-nqp, $prop), (
                     nqp::push_s(bitfield-columns,
@@ -824,6 +840,41 @@ sub dedupe-rows (@sorted-cp, @code-sorted-props, Mu $enum-prop-nqp, Mu $bin-prop
     }
     return %bitfield-rows-seen;
 }
+#| Makes the C functions which go from a property code into a value
+#| get_prop_int returns an prop's raw int, get_prop_str returns a char * from
+#| an enum. get_prop_enum gets an integer value from an enum
+sub make-property-switches (@code-sorted-props) {
+    my @switch-enum = $prefix ~ 'int get_prop_enum (uint32_t cp, int propcode) {';
+    my @switch      = $prefix ~ 'int get_prop_int (uint32_t cp, int propcode) {';
+    my @switch-enum-str = $prefix ~ 'char * get_prop_str (uint32_t cp, int propcode) {';
+    (@switch, @switch-enum, @switch-enum-str)».push: $myindent ~ 'switch (propcode) {';
+    for ^@code-sorted-props.elems {
+        my $prop = @code-sorted-props[$_];
+        my $def =  "Uni_Propcode_$prop";
+        @bitfield-h.push: "#define $def $_";
+        if %enumerated-properties{$prop}:exists {
+            if %enumerated-properties{$prop}.type eq 'Int' {
+                @switch-enum.append: $myindent x 2 ~ " case $def:",
+                $myindent x 3 ~ "return get_enum_prop(cp, $prop);";
+            }
+            elsif $prop eq any(@gc) {
+
+            }
+            elsif %enumerated-properties{$prop}.type eq 'Str' {
+                @switch-enum-str.append: $myindent x 2 ~ " case $def:",
+                    $myindent x 3 ~ "return get_enum_prop(cp, $prop);";
+            }
+            else {
+                die $prop, %enumerated-properties{$prop}.type
+            }
+        }
+        @switch.append: $myindent x 2 ~ " case $def:",
+            $myindent x 3 ~ "return get_cp_raw_value(cp, $prop);";
+    }
+    (@switch, @switch-enum, @switch-enum-str)».append: $myindent ~ '}', '}';
+
+    return @switch.join("\n"), @switch-enum.join("\n"), @switch-enum-str.join("\n");
+}
 sub make-bitfield-rows ( @sorted-cp ) {
     note "Making bitfield-rows…";
     my @code-sorted-props;
@@ -868,22 +919,8 @@ sub make-bitfield-rows ( @sorted-cp ) {
     }
     @bitfield-h.push("\};");
     @bitfield-h.push("typedef struct binary_prop_bitfield binary_prop_bitfield;");
-    my @switch-enum = $prefix ~ 'int get_prop_enum (uint32_t cp, int propcode) {';
-    my @switch      = $prefix ~ 'int get_prop_int (uint32_t cp, int propcode) {';
-    (@switch, @switch-enum)».push: $myindent ~ 'switch (propcode) {';
-    for ^@code-sorted-props.elems {
-        my $def =  "Uni_Propcode_@code-sorted-props[$_]";
-        @bitfield-h.push: "#define $def $_";
-        if %enumerated-properties{@code-sorted-props[$_]}:exists {
-            @switch-enum.append: $myindent x 2 ~ " case $def:",
-                $myindent x 3 ~ "return get_enum_prop(cp, @code-sorted-props[$_]);";
-        }
-        @switch.append: $myindent x 2 ~ " case $def:",
-            $myindent x 3 ~ "return get_cp_raw_value(cp, @code-sorted-props[$_]);";
-    }
-    (@switch, @switch-enum)».append: $myindent ~ '}', '}';
-    my $t1 = now;
 
+    my $t1 = now;
     my %bitfield-rows-seen = dedupe-rows(@sorted-cp, @code-sorted-props, $enum-prop-nqp, $bin-prop-nqp);
     say "Finished computing all rows, took {now - $t1} for {@sorted-cp.elems} elems. Now creating the final unduplicated version.";
     my $bitfield-rows := nqp::list_s;
@@ -899,7 +936,7 @@ sub make-bitfield-rows ( @sorted-cp ) {
     $binary-struct-str
         \};
     END
-    return join "\n", $prop-bitfield, @switch.join("\n"), @switch-enum.join("\n"), '';
+    return join "\n", $prop-bitfield, make-property-switches(@code-sorted-props).join("\n") ~ "\n";
 }
 sub dump-json ( Bool $dump ) {
     note "Converting data to JSON...";

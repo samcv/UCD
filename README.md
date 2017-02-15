@@ -52,12 +52,22 @@ Stores PropertyValueAliases from PropertyValueAliases.txt Used to go from short 
 ----------------------------------------------
 
 Stores Property Aliases or Property Value Aliases to their Full Name mappings
+
+### sub make-property-switches
+
+```perl6
+sub make-property-switches(
+    @code-sorted-props
+) returns Mu
+```
+
+Makes the C functions which go from a property code into a value get_prop_int returns an prop's raw int, get_prop_str returns a char * from an enum. get_prop_enum gets an integer value from an enum
  
 # lib/UCDlib.pm6
 
 ### sub slurp-snippets
 
-```
+```perl6
 sub slurp-snippets(
     Str $name, 
     Str $subname?, 
@@ -71,7 +81,7 @@ Slurps files from the snippets folder and concatenates them together The first a
 
 ### sub get-points-ranges-array
 
-```
+```perl6
 sub get-points-ranges-array(
     %point-index, 
     Array $sorted-points?

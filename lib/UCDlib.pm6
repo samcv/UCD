@@ -50,8 +50,11 @@ sub slurp-snippets ( Str $name, Str $subname?, $numbers? ) is export {
     my $text ~= .slurp orelse die for $files.sort;
     $text;
 }
+sub announce ( Str(Cool:D) $verb, Str(Cool:D) $subject ) {
+    note $BOLD, $verb.tc, ' ', $BLUE, $subject, $RESET, $BOLD, ' …', $RESET;
+}
 sub slurp-lines ( Str $filename ) returns Seq is export {
-    note $BOLD, "Reading ", $BLUE, $filename, '.txt', $RESET, $BOLD, ' …', $RESET;
+    announce "Reading", "$filename.txt";
     "$UNIDATA-folder/$filename.txt".IO.lines orelse die;
 }
 sub Dump-Range ( Range $range, Hash $hashy ) is export {
