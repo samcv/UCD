@@ -768,13 +768,14 @@ sub dedupe-rows (@sorted-cp, @code-sorted-props, Mu $enum-prop-nqp, Mu $bin-prop
     my %bitfield-rows-seen = nqp::hash;
     nqp::bind($enum-prop-nqp, nqp::decont($enum-prop-nqp));
     nqp::bind($bin-prop-nqp, nqp::decont($bin-prop-nqp));
-    my $iter_ := nqp::getattr(@code-sorted-props,List,'$!reified');
+    my $orig-props-iter := nqp::getattr(@code-sorted-props,List,'$!reified');
+    my ($props-iter, $prop);
     for @sorted-cp -> $point {
         nqp::bind(bitfield-columns, nqp::list_s);
         nqp::bind(points-point, nqp::decont(nqp::atkey(%points, $point)));
-        my $iter := nqp::clone($iter_);
-        while nqp::elems($iter) {
-            my $prop = nqp::shift($iter);
+        $props-iter := nqp::clone($orig-props-iter);
+        while nqp::elems($props-iter) {
+            $prop := nqp::shift($props-iter);
             nqp::if( nqp::existskey(points-point, $prop), (
                 nqp::if( nqp::existskey($bin-prop-nqp, $prop), (
                     nqp::push_s(bitfield-columns,
