@@ -687,7 +687,7 @@ sub make-enums {
 sub make-point-index (@sorted-cp, :$less) {
     note $BOLD, "Making ", $BLUE, "point_index", $RESET, "…";
     my $t0 = now;
-    my %points-ranges = get-points-ranges(%point-index);
+    my @points-ranges = get-points-ranges-array(%point-index);
     say "Took ", $BOLD, now - $t0, $RESET, " seconds to compute point_index ranges";
     my $dump-count = 0;
     my Int $point-max = @sorted-cp.tail.Int;
@@ -701,8 +701,8 @@ sub make-point-index (@sorted-cp, :$less) {
     my $indent = '';
     my $tabstop = ' ';
     my $additive-diff = 0;
-    for %points-ranges.sort(*.key.Int) {
-        my ($range-no, $range) = (.key, .value);
+    for ^@points-ranges.elems {
+        my ($range-no, $range) = ($_, @points-ranges[$_]);
         my $inc-diff = $range.tail - $range[0] + 1;
         if %point-index{$range[0]}:exists {
             if $range.elems > $min-elems {
