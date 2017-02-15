@@ -768,10 +768,13 @@ sub dedupe-rows (@sorted-cp, @code-sorted-props, Mu $enum-prop-nqp, Mu $bin-prop
     my %bitfield-rows-seen = nqp::hash;
     nqp::bind($enum-prop-nqp, nqp::decont($enum-prop-nqp));
     nqp::bind($bin-prop-nqp, nqp::decont($bin-prop-nqp));
+    my $iter_ := nqp::getattr(@code-sorted-props,List,'$!reified');
     for @sorted-cp -> $point {
         nqp::bind(bitfield-columns, nqp::list_s);
         nqp::bind(points-point, nqp::decont(nqp::atkey(%points, $point)));
-        for @code-sorted-props -> $prop {
+        my $iter := nqp::clone($iter_);
+        while nqp::elems($iter) {
+            my $prop = nqp::shift($iter);
             nqp::if( nqp::existskey(points-point, $prop), (
                 nqp::if( nqp::existskey($bin-prop-nqp, $prop), (
                     nqp::push_s(bitfield-columns,
@@ -822,7 +825,7 @@ sub dedupe-rows (@sorted-cp, @code-sorted-props, Mu $enum-prop-nqp, Mu $bin-prop
 }
 sub make-bitfield-rows ( @sorted-cp ) {
     note "Making bitfield-rows…";
-    my str @code-sorted-props;
+    my @code-sorted-props;
     my $code-sorted-props := nqp::list_s;
     # Create the order of the struct
     @bitfield-h.push("struct binary_prop_bitfield  \{");
