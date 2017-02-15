@@ -779,15 +779,15 @@ sub dedupe-rows (@sorted-cp, @code-sorted-props, Mu $enum-prop-nqp, Mu $bin-prop
                     );
                 ), (nqp::if(nqp::existskey($enum-prop-nqp, $prop), (
                       nqp::stmts(
-                        #nqp::bind($enum-prop-nqp-prop, nqp::atkey($enum-prop-nqp, $prop)),
+                        nqp::bind($enum-prop-nqp-prop, nqp::atkey($enum-prop-nqp, $prop)),
                         # If the key exists we need to look up the value
                         nqp::bind($enum, nqp::atkey(points-point, $prop)),
                         # If it doesn't exist we already have the property code.
                         # Eventually we may want to try and have it so all things
                         # either have or don't have the property for consistency
                         # XXX
-                        nqp::if( nqp::existskey(nqp::atkey($enum-prop-nqp, $prop), $enum), (
-                            nqp::push_s(bitfield-columns, atkey2($enum-prop-nqp, $prop, $enum));
+                        nqp::if( nqp::existskey($enum-prop-nqp-prop, $enum), (
+                            nqp::push_s(bitfield-columns, nqp::atkey($enum-prop-nqp-prop, $enum));
                         ), (
                             nqp::push_s(bitfield-columns, $enum);
                            )
