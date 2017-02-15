@@ -69,12 +69,13 @@ Slurps files from the snippets folder and concatenates them together The first a
  
 # lib/bitfield-rows-switch.pm6
 
-### sub get-points-ranges
+### sub get-points-ranges-array
 
 ```
-sub get-points-ranges(
-    %point-index
+sub get-points-ranges-array(
+    %point-index, 
+    Array $sorted-points?
 ) returns Mu
 ```
 
-Makes a hash where the keys "range numbers". These range numbers start at 0 and we push onto each range number all of the contiguous codepoints which have the same bitfield row. We also fill in any gaps and add those to their own range number.
+Returns a multi-dim Array. We push onto each index all of the contiguous codepoints which have the same bitfield row. We also fill in any gaps and add those to their own range number.
