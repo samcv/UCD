@@ -1,7 +1,8 @@
+const static int get_offset_new (uint32_t cp);
 /* Returns the value stored in the bitfield for the specified cp */
 #define get_cp_raw_value(cp, propname) \
 mybitfield[ \
-    get_bitfield_offset(cp) \
+    get_offset_new(cp) \
 ].propname
 
 /* Returns a Boolean property's value */

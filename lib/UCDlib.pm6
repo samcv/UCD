@@ -45,8 +45,8 @@ sub slurp-snippets ( Str $name, Str $subname?, $numbers? ) is export {
     }
     die if !defined %dir-listing{$dir-name};
     my $files = $subname ?? %dir-listing{$dir-name}.grep( { .basename.contains: $subname } ) !! %dir-listing{$dir-name};
-    $files .= grep: { .basename.starts-with: $numbers.any } if $numbers and $numbers.any >= 0;
-    $files .= grep: { .basename.starts-with($numbers.any).not } if $numbers and $numbers.any < 0;
+    $files .= grep: { .basename.match( / ^ (\d+)'-' / )[0].Int == $numbers.any } if $numbers.defined and $numbers.any >= 0;
+    $files .= grep: { .basename.match( / ^ (\d+)'-' / )[0].Int != $numbers.any } if $numbers.defined and $numbers.any < 0;
     my $text ~= .slurp orelse die for $files.sort;
     $text;
 }
