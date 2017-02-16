@@ -947,12 +947,12 @@ sub make-bitfield-rows ( @sorted-cp ) {
 sub dump-json ( Bool $dump ) {
     note "Converting data to JSON...";
     if $dump {
-        write-file(%points.VAR.name ~ '.Dump.p6',  Dump %points);
-        write-file(%decomp_spec.VAR.name ~ '.Dump.p6',  Dump %decomp_spec);
+        write-file(%points.VAR.name ~ '.perl.p6',  %points.perl);
+        write-file(%decomp_spec.VAR.name ~ '.perl.p6',  %decomp_spec.perl);
     }
     for %binary-properties, %PropertyValueAliases,
        %PropertyNameAliases, %PropertyNameAliases_to, %PropertyValueAliases_to {
-        write-file(.VAR.name ~ '.Dump.p6', Dump $_);
+        write-file(.VAR.name ~ '.perl.p6', $_.perl);
     }
-    write-file(%enumerated-properties.VAR.name ~ '.Dump.p6', Dump %enumerated-properties);
+    write-file(%enumerated-properties.VAR.name ~ '.perl.p6', %enumerated-properties.perl);
 }

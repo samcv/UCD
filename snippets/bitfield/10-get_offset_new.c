@@ -3,8 +3,9 @@ const static int get_offset_new (uint32_t cp) {
     int i = 0;
     for (;1;i++) {
         if (cp < sorted_table[i+1].low) {
-            //printf("i %i high %i low %i\n", i, sorted_table[i].high, sorted_table[i].low);
+            //fprintf(stderr, "i %i high %i low %i\n", i, sorted_table[i].high, sorted_table[i].low);
             if (cp >= sorted_table[i].low && cp <= sorted_table[i].high) {
+                //fprintf(stderr, "just right\n");
                 return sorted_table[i].bitfield_row;
             }
             /* Case to catch cp's less than the first point in the table
@@ -14,7 +15,7 @@ const static int get_offset_new (uint32_t cp) {
                 return point_index[cp];
             }
             else {
-                //printf("missed %i\n", sorted_table[i].miss);
+                //fprintf(stderr, "missed %i\n", sorted_table[i].miss);
                 return point_index[cp - sorted_table[i].miss];
             }
         }
