@@ -122,7 +122,7 @@ sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
         unless $names-only {
             my $bitfield_c = [~] “#include "bitfield.h"\n”,
                 make-enums(), make-bitfield-rows(@sorted-cp), make-point-index(@sorted-cp),
-                $int-main;
+                slurp-snippets("bitfield", "test"), $int-main;
             note "Saving bitfield.c…";
             write-file('bitfield.c', $bitfield_c);
             @bitfield-h.unshift: slurp-snippets("bitfield", "header", 0);
@@ -459,7 +459,6 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
     our $first-point-cp;
     my %First-point; # %First-point gets assigned a value if it matches as above
     # and so is the first in a range inside UnicodeData.txt
-    my $num-processed = 0;
     my $t1 = now;
     for slurp-lines $file {
         next if skip-line($_);
@@ -476,7 +475,7 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
             bindkey(%hash, 'General_Category', $gencat);
             bindkey(%seen-gc, $gencat, True);
         }
-        if $ccclass {
+        if str-isn't-empty($ccclass) {
             bindkey(%seen-ccc, $ccclass, True);
             bindkey(%hash, 'Canonical_Combining_Class', $ccclass);
         }
@@ -493,7 +492,7 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
         bindkey(%hash, 'Any', True);
         bindkey(%hash, 'Bidi_Mirrored', True) if starts-with($bidimirrored, 'Y');
 
-        if $decmpspec {
+        if str-isn't-empty($decmpspec) {
             my @dec = nqp::split(' ', $decmpspec);
             %decomp_spec{$cp}<type> =
                 starts-with(@dec[0], '<') ?? @dec.shift !! 'Canonical';
@@ -528,8 +527,7 @@ sub UnicodeData ( Str $file, Int $less = 0, Bool $no-UnicodeData = False ) {
         bindkey(%names, base10_I_decont($cp), $name);
     }
     my $time-took = now - $t1;
-    say "Took $time-took secs to process $num-processed and ",
-        ($time-took/($num-processed or 1) * 1000).fmt("%.4f"), " ms/line";
+    announce 'process', 'UnicodeData', $time-took;
     my $gc_0-seen = get-pvalue-seen(@gc[0], '');
     my $gc_1-seen = get-pvalue-seen(@gc[1], '');
     for %seen-gc.keys {
@@ -824,6 +822,9 @@ sub dedupe-rows (@sorted-cp, @code-sorted-props, Mu $enum-prop-nqp, Mu $bin-prop
             #}
         }
         $bitfield-rows-str = nqp::join(',', bitfield-columns);
+        if $point == 0x378 {
+            say $bitfield-rows-str;
+        }
         # If we've already seen an identical row
         nqp::if(nqp::existskey(%bitfield-rows-seen, $bitfield-rows-str), (
             nqp::bindkey(%point-index, $point, nqp::atkey(%bitfield-rows-seen, $bitfield-rows-str))

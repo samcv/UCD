@@ -50,7 +50,10 @@ sub slurp-snippets ( Str $name, Str $subname?, $numbers? ) is export {
     my $text ~= .slurp orelse die for $files.sort;
     $text;
 }
-sub announce ( Str(Cool:D) $verb, Str(Cool:D) $subject ) {
+multi sub announce ( $verb, $subject, $time) is export {
+    note $BOLD, "Took ", $time, ' seconds to ', $verb, ' ', $BLUE, $subject, $RESET;
+}
+multi sub announce ( $verb, $subject ) is export {
     note $BOLD, $verb.tc, ' ', $BLUE, $subject, $RESET, $BOLD, ' …', $RESET;
 }
 sub slurp-lines ( Str $filename ) returns Seq is export {
