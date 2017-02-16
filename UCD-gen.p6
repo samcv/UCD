@@ -709,7 +709,8 @@ sub make-point-index (@sorted-cp, :$less) {
     my Cool:D @mapping;
     my $min-elems = 10;
     my str @range-str = 'const static int get_bitfield_offset (uint32_t cp) {',
-        '#define BITFIELD_DEFAULT ' ~ $bin-index + 1, 'int return_val = cp;';
+        'int return_val = cp;';
+    @bitfield-h.push: '#define BITFIELD_DEFAULT 0';
     @bitfield-h.push: 'const static int get_bitfield_offset (uint32_t cp);';
     my str @range-str2;
     my $indent = '';
@@ -717,7 +718,7 @@ sub make-point-index (@sorted-cp, :$less) {
     my $additive-diff = 0;
     for ^@points-ranges.elems {
         my ($range-no, $range) = ($_, @points-ranges[$_]);
-        my $inc-diff = $range.tail - $range[0] + 1;
+        my $inc-diff = $range.tail - $range[0];
         if %point-index{$range[0]}:exists {
             if $range.elems > $min-elems {
                 $additive-diff += $inc-diff;
@@ -745,7 +746,7 @@ sub make-point-index (@sorted-cp, :$less) {
             }
             else {
                 for ^$range.elems {
-                    @mapping.push($bin-index + 1)
+                    @mapping.push('BITFIELD_DEFAULT')
                 }
             }
         }
@@ -784,6 +785,10 @@ sub dedupe-rows (@sorted-cp, @code-sorted-props, Mu $enum-prop-nqp, Mu $bin-prop
     nqp::bind($bin-prop-nqp, nqp::decont($bin-prop-nqp));
     my $orig-props-iter := nqp::getattr(@code-sorted-props,List,'$!reified');
     my ($props-iter, $prop);
+    # Add a default bitfield row, which is used by any cp we don't know the props
+    # of. This will cause it to generate a default 0th bitfield row
+    @sorted-cp.unshift('-1');
+    %points{-1} = nqp::hash;
     for @sorted-cp -> $point {
         nqp::bind(bitfield-columns, nqp::list_s);
         nqp::bind(points-point, nqp::decont(nqp::atkey(%points, $point)));
@@ -822,9 +827,6 @@ sub dedupe-rows (@sorted-cp, @code-sorted-props, Mu $enum-prop-nqp, Mu $bin-prop
             #}
         }
         $bitfield-rows-str = nqp::join(',', bitfield-columns);
-        if $point == 0x378 {
-            say $bitfield-rows-str;
-        }
         # If we've already seen an identical row
         nqp::if(nqp::existskey(%bitfield-rows-seen, $bitfield-rows-str), (
             nqp::bindkey(%point-index, $point, nqp::atkey(%bitfield-rows-seen, $bitfield-rows-str))
@@ -839,6 +841,9 @@ sub dedupe-rows (@sorted-cp, @code-sorted-props, Mu $enum-prop-nqp, Mu $bin-prop
         );
 
     }
+    # Remove the default since it's not actually a cp
+    @sorted-cp.shift;
+    %points{-1}:delete;
     return %bitfield-rows-seen;
 }
 #| Makes the C functions which go from a property code into a value
