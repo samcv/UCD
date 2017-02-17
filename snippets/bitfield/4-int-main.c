@@ -5,11 +5,7 @@
         fprintf(stderr, "U+%X [%c] Numeric_Value_Numerator: %" PRIi64 "\n", n, n, get_enum_prop(n, Numeric_Value_Numerator));
     }
     for (int i = 0; i < 'Z' + 1; i++) {
-        if (get_offset_new(i) != get_bitfield_offset(i)) {
-            fprintf(stderr, "ERROR not get_offset_new != get_bitfield_offset\n");
-            return 1;
-        }
-        printf("0x%X d%i get_bitfield_offset(%i)\n", i, i, get_bitfield_offset(i));
+        printf("0x%X d%i get_offset_new(%i)\n", i, i, get_offset_new(i));
         unsigned int cp_GCB = get_bool_prop(i, Grapheme_Cluster_Break);
         get_gencat(i, gc);
         if (cp_GCB != Uni_PVal_GRAPHEME_CLUSTER_BREAK_Control ) {

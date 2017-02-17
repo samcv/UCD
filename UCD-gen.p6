@@ -708,49 +708,16 @@ sub make-point-index (@sorted-cp, :$less) {
     my $t1 = now;
     my Cool:D @mapping;
     my $min-elems = 10;
-    my str @range-str = 'const static int get_bitfield_offset (uint32_t cp) {',
-        'int return_val = cp;';
     @bitfield-h.push: '#define BITFIELD_DEFAULT 0';
-    @bitfield-h.push: 'const static int get_bitfield_offset (uint32_t cp);';
     my str @range-str2;
     my $indent = '';
     my $tabstop = ' ';
-    my $additive-diff = 0;
-    for ^@points-ranges.elems {
-        my ($range-no, $range) = ($_, @points-ranges[$_]);
-        my $inc-diff = $range.tail - $range[0];
-        if %point-index{$range[0]}:exists {
-            if $range.elems > $min-elems {
-                $additive-diff += $inc-diff;
-                @range-str.push( [~] $indent, 'if (cp >= ', $range[0], ') {',
-                ($inc-diff != 1 ?? ' return_val -= ' ~ $inc-diff ~ ';' !! '') );
-                $indent ~= $tabstop;
-                @range-str.push: $indent ~ 'if (cp <= ' ~ $range.tail ~ ') return ' ~ %point-index{$range[0]} ~ ';';
-                @range-str2.push: '{' ~ ($range[0], $range.tail,  %point-index{$range[0]}, $additive-diff).join(',') ~ '}';
-            }
-            else {
-                my $point-index-var = %point-index{$range[0]};
-                for ^$range.elems {
-                    @mapping.push: %point-index{ $range[$_] };
-                }
-            }
-        }
-        else {
-            if $range.elems > $min-elems {
-                $additive-diff += $inc-diff;
-                @range-str.push( [~] $indent, 'if (cp >= ', $range[0], ') {',
-                ($inc-diff != 1 ?? ' return_val -= ' ~ $inc-diff ~ ';' !! '') );
-                $indent ~= $tabstop;
-                @range-str.push: $indent ~ 'if (cp <= ' ~ $range.tail ~ ') return BITFIELD_DEFAULT;';
-                @range-str2.push: '{' ~ ($range[0], $range.tail,  'BITFIELD_DEFAULT', $additive-diff).join(',') ~ '}';
-            }
-            else {
-                for ^$range.elems {
-                    @mapping.push('BITFIELD_DEFAULT')
-                }
-            }
-        }
+    my @debug_out;
+    my $i = 0;
+    for ^(0xA47 + 1000) {
+        quietly @debug_out.push: $_ ~ ' => ' ~ %point-index{$_};
     }
+    spurt 'mapping.txt', @debug_out.join("\n");
     my $struct = Q:to/END/;
 
     struct table  {
@@ -761,17 +728,40 @@ sub make-point-index (@sorted-cp, :$less) {
     };
     typedef struct table table;
     END
-    while $indent {
-        @range-str.push: $indent ~ '}';
-        $indent = ' ' x ($indent.chars - $tabstop.chars);
+    for ^@points-ranges.elems {
+        my ($range-no, $range) = ($_, @points-ranges[$_]);
+        my $high = $range.tail;
+        my $low = $range[0];
+        my $bitfield_row;
+        if %point-index{$range[0]}:exists {
+            $bitfield_row = %point-index{$range[0]};
+            if $range.elems > $min-elems {
+                @range-str2.push: '{' ~ ($low, $high, $bitfield_row, $high - @mapping.elems).join(',') ~ '}';
+            }
+            else {
+                for ^$range.elems {
+                    @mapping.push: %point-index{ $range[$_] };
+                }
+            }
+        }
+        else {
+            $bitfield_row = 'BITFIELD_DEFAULT';
+            if $range.elems > $min-elems {
+                @range-str2.push: '{' ~ ($low, $high,  $bitfield_row, $high - @mapping.elems).join(',') ~ '}';
+            }
+            else {
+                for ^$range.elems {
+                    @mapping.push('BITFIELD_DEFAULT')
+                }
+            }
+        }
     }
-    @range-str.append: 'return point_index[return_val];', '}' ~ "\n";
     say "Took this long to concat points: ", now - $t1;
     my $mapping-str = ( "#define max_bitfield_index $point-max\n$type point_index[",
         @mapping.elems, "] = \{\n    ",
         @mapping.join(',').break-into-lines(','), "\n\};\n"
         ).join;
-    return [~] $mapping-str, @range-str.join("\n"), $struct,
+    return [~] $mapping-str, $struct,
                compose-array( $prefix ~ 'table', 'sorted_table', @range-str2 ),
                slurp-snippets('bitfield', 'get_offset_new');
 }
