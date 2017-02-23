@@ -739,7 +739,6 @@ sub make-point-index (@sorted-cp, :$less) {
         if !defined $high {
             say 'Range ', $range.perl;
             say 'rangeno ', $range-no;
-            exit;
         }
         my $bitfield_row = %point-index{$high}:exists
             ?? %point-index{$high}
