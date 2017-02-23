@@ -402,7 +402,7 @@ sub register-binary-property (+@names) {
         }
         %binary-properties{$name} = name => $name, bitwidth => 1;
     }
-    note "Registering binary properties: @names.join(', ')";
+    announce "Registering binary properties: ", @names.join(', ');
 }
 sub compute-bitwidth ( Int $max ) { ($max - 1).base(2).chars }
 sub tweak_nfg_qc (@sorted-cp) {
@@ -698,10 +698,10 @@ sub make-enums {
     @enums.join("\n");
 }
 sub make-point-index (@sorted-cp, :$less) {
-    note $BOLD, "Making ", $BLUE, "point_index", $RESET, "…";
+    announce "Making", "point_index";
     my $t0 = now;
     my @points-ranges = get-points-ranges-array(%point-index);
-    say "Took ", $BOLD, now - $t0, $RESET, " seconds to compute point_index ranges";
+    announce "compute", "point_index ranges", now - $t0;
     my $dump-count = 0;
     my Int $point-max = @sorted-cp.tail.Int;
     my Str $type = compute-type($bin-index + 1);
@@ -712,12 +712,16 @@ sub make-point-index (@sorted-cp, :$less) {
     my str @range-str2;
     my $indent = '';
     my $tabstop = ' ';
-    my @debug_out;
+    my (@debug_out, @debug_range);
     my $i = 0;
     for ^(0xA47 + 1000) {
         quietly @debug_out.push: $_ ~ ' => ' ~ %point-index{$_};
     }
-    spurt 'mapping.txt', @debug_out.join("\n");
+    for ^(0xA47 + 1000) {
+        quietly @debug_range.push: $_ ~ ' => ' ~ @points-ranges[$_];
+    }
+    spurt 'range_debug.txt', @debug_range.join: "\n";
+    spurt 'mapping.txt', @debug_out.join: "\n";
     my $struct = Q:to/END/;
 
     struct table  {
@@ -732,31 +736,24 @@ sub make-point-index (@sorted-cp, :$less) {
         my ($range-no, $range) = ($_, @points-ranges[$_]);
         my $high = $range.tail;
         my $low = $range[0];
-        my $bitfield_row;
-        if %point-index{$range[0]}:exists {
-            $bitfield_row = %point-index{$range[0]};
-            if $range.elems > $min-elems {
-                @range-str2.push: '{' ~ ($low, $high, $bitfield_row, $high - @mapping.elems).join(',') ~ '}';
-            }
-            else {
-                for ^$range.elems {
-                    @mapping.push: %point-index{ $range[$_] };
-                }
-            }
+        if !defined $high {
+            say 'Range ', $range.perl;
+            say 'rangeno ', $range-no;
+            exit;
+        }
+        my $bitfield_row = %point-index{$high}:exists
+            ?? %point-index{$high}
+            !! 'BITFIELD_DEFAULT';
+        if $range.elems > $min-elems {
+            @range-str2.push: '{' ~ ($low, $high, $bitfield_row, $high - @mapping.elems).join(',') ~ '}';
         }
         else {
-            $bitfield_row = 'BITFIELD_DEFAULT';
-            if $range.elems > $min-elems {
-                @range-str2.push: '{' ~ ($low, $high,  $bitfield_row, $high - @mapping.elems).join(',') ~ '}';
-            }
-            else {
-                for ^$range.elems {
-                    @mapping.push('BITFIELD_DEFAULT')
-                }
+            for ^$range.elems {
+                @mapping.push: $bitfield_row;
             }
         }
     }
-    say "Took this long to concat points: ", now - $t1;
+    announce "concat", "points", now - $t1;
     my $mapping-str = ( "#define max_bitfield_index $point-max\n$type point_index[",
         @mapping.elems, "] = \{\n    ",
         @mapping.join(',').break-into-lines(','), "\n\};\n"
@@ -889,7 +886,7 @@ sub make-bitfield-rows ( @sorted-cp ) {
         @list-for-packing.push(.key => .value.bitwidth);
     }
     my @packed-enums = compute-packing(@list-for-packing);
-    say $BOLD, "Packed-enums: ", $BOLD_OFF, @packed-enums.perl;
+    announce "Packed-enums: ", @packed-enums.perl;
     for @packed-enums.».key -> $property {
         my $bitwidth;
         if %enumerated-properties{$property}:exists {
@@ -913,29 +910,32 @@ sub make-bitfield-rows ( @sorted-cp ) {
         @code-sorted-props.push($property);
         @bitfield-h.push("    unsigned int $property :$bitwidth;");
     }
-    @bitfield-h.push("\};");
-    @bitfield-h.push("typedef struct binary_prop_bitfield binary_prop_bitfield;");
+    @bitfield-h.append:
+        '};', "typedef struct binary_prop_bitfield binary_prop_bitfield;";
 
     my $t1 = now;
     my %bitfield-rows-seen = dedupe-rows(@sorted-cp, @code-sorted-props, $enum-prop-nqp, $bin-prop-nqp);
-    say "Finished computing all rows, took {now - $t1} for {@sorted-cp.elems} elems. Now creating the final unduplicated version.";
+    announce "Finished computing", "all rows ({@sorted-cp.elems} cp)", now - $t1;
     my $bitfield-rows := nqp::list_s;
     my $t2 = now;
     for %bitfield-rows-seen.sort(*.value.Int).».kv -> ($row-str, $index) {
         nqp::push_s($bitfield-rows, '    {' ~ $row-str ~ "\},/* index $index */");
     }
     my str $binary-struct-str = nqp::join("\n", $bitfield-rows);
-    say "Took {now - $t2} seconds to join all the seen bitfield rows";
+    announce "join", "all seen bitfield rows", now - $t2;
     my $prop-bitfield = qq:to/END/;
     #include <stdio.h>
     {get-prefix()} binary_prop_bitfield mybitfield[{$bin-index + 1}] = \{
     $binary-struct-str
         \};
     END
-    return join "\n", $prop-bitfield, make-property-switches(@code-sorted-props).join("\n") ~ "\n";
+    return join("\n",
+                    $prop-bitfield,
+                    make-property-switches @code-sorted-props
+               ) ~ "\n";
 }
 sub dump-json ( Bool $dump ) {
-    note "Converting data to JSON...";
+    announce "Converting", "data to JSON";
     if $dump {
         write-file(%points.VAR.name ~ '.perl.p6',  %points.perl);
         write-file(%decomp_spec.VAR.name ~ '.perl.p6',  %decomp_spec.perl);
