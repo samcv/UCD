@@ -13,13 +13,15 @@ sub get-points-ranges-array (%point-index, Array $sorted-points?) is export {
     for @sorted-points -> $cp {
         $point-no++;
         # This code path is taken if there are noncontiguous gaps in the ranges.
-        # We populate the ranges hash with these missing values.
+        # We populate the range array's element with these missing values.
         if $cp != $point-no {
             my $between = $cp - $point-no;
             $between == 1
             ?? @ranges[++$i].push: $point-no
             !! @ranges[++$i].append: ($point-no)..($point-no + $between - 1);
             $point-no += $cp - $point-no;
+            # Clear the memory
+            $saw = Nil;
         }
         if $saw eq nqp::atkey(%point-index, $cp) {
             @ranges[$i].push: $cp;
