@@ -2,7 +2,7 @@ use UCDlib;
 multi compose-array ( Str:D $type, Str:D $name, Cool:D $elems,
                       Str:D $body, Bool :$header = False, Str:D :$delim = ',' ) is export {
     if $header {
-        $type ~ " $name\[" ~ $elems ~ '];';
+        "#define {$name}_elems $elems" ~ "\n" ~ $type ~ " $name\[" ~ $elems ~ '];';
     }
     else {
         ($type,

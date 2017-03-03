@@ -23,7 +23,7 @@ sub get-points-ranges-array (%point-index, Array $sorted-points?) is export {
             # Clear the memory
             $saw = Nil;
         }
-        if $saw eq nqp::atkey(%point-index, $cp) {
+        if $saw.defined && $saw eq nqp::atkey(%point-index, $cp) {
             @ranges[$i].push: $cp;
         }
         else {

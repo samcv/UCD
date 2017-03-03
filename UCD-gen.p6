@@ -714,11 +714,12 @@ sub make-point-index (@sorted-cp, :$less) {
     my $tabstop = ' ';
     my (@debug_out, @debug_range);
     my $i = 0;
-    for ^(0xA47 + 1000) {
+    constant $max-debug = 10_000;
+    for ^$max-debug {
         quietly @debug_out.push: $_ ~ ' => ' ~ %point-index{$_};
     }
-    for ^(0xA47 + 1000) {
-        quietly @debug_range.push: $_ ~ ' => ' ~ @points-ranges[$_];
+    for ^$max-debug {
+        quietly @debug_range.push: $_ // '' ~ ' => ' ~ @points-ranges[$_];
     }
     spurt 'range_debug.txt', @debug_range.join: "\n";
     spurt 'mapping.txt', @debug_out.join: "\n";
@@ -740,7 +741,7 @@ sub make-point-index (@sorted-cp, :$less) {
             say 'Range ', $range.perl;
             say 'rangeno ', $range-no;
         }
-        my $bitfield_row = %point-index{$high}:exists
+        my $bitfield_row = %point-index{$high}:exists && %point-index{$high}.defined
             ?? %point-index{$high}
             !! 'BITFIELD_DEFAULT';
         if $range.elems > $min-elems {
@@ -753,10 +754,10 @@ sub make-point-index (@sorted-cp, :$less) {
         }
     }
     announce "concat", "points", now - $t1;
-    my $mapping-str = ( "#define max_bitfield_index $point-max\n$type point_index[",
-        @mapping.elems, "] = \{\n    ",
-        @mapping.join(',').break-into-lines(','), "\n\};\n"
-        ).join;
+    my $mapping-str =
+    "#define highest_cp $point-max\n" ~
+    compose-array($type, 'point_index', @mapping) ~ "\n";
+    @bitfield-h.push(compose-array($type, 'point_index', @mapping, :header));
     return [~] $mapping-str, $struct,
                compose-array( $prefix ~ 'table', 'sorted_table', @range-str2 ),
                slurp-snippets('bitfield', 'get_offset_new');
