@@ -49,6 +49,7 @@ class base40-string {
         # XXX for some reason either we aren't encoding the chars right or
         # names.c will keep going unless you put an extra null
         my $null = "\0";
+        $!to-encode-str ~= "\0";
         $!to-encode-str ~~ s/ "\0"* $/$null/;
     }
     method get-base40 {
