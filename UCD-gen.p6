@@ -45,7 +45,7 @@ my %PropertyValueAliases_to;
 =para Stores PropertyValueAliases from PropertyValueAliases.txt
 Used to go from short names that may be used in the data files to the full names
 
-my %PropertyNameAliases;
+#my %PropertyNameAliases;
 my %PropertyNameAliases_to;
 =head2 C<%PropertyNameAliases %PropertyNameAliases_to>
 =para Stores Property Aliases or Property Value Aliases to their Full Name mappings
@@ -62,8 +62,13 @@ sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
     my @only = $only ?? $only.split( [',', ' '] ) !! Empty;
     $debug-global = $debug;
     start-routine();
-    PNameAliases("PropertyAliases", %PropertyNameAliases, %PropertyNameAliases_to);
-    PValueAliases("PropertyValueAliases", %PropertyValueAliases, %PropertyValueAliases_to);
+    use lib 'Unicode-Grant/lib';
+    use PropertyAliases;
+    use PropertyValueAliases;
+    %PropertyNameAliases_to = GetPropertyAliasesLookupHash;
+    #PNameAliases("PropertyAliases", %PropertyNameAliases, %PropertyNameAliases_to);
+    #PValueAliases("PropertyValueAliases", %PropertyValueAliases, %PropertyValueAliases_to);
+    %PropertyValueAliases_to = GetPropertyValue-to-long-value-LookupHash;
     timer('UnicodeData');
     UnicodeData("UnicodeData", $less, $no-UnicodeData);
     die Dump %points unless %points{0}:exists;
@@ -224,6 +229,7 @@ class pvalue-seen {
         %!enum;
     }
 }
+#`{{
 sub PNameAliases (Str $filename, %aliases, %aliases_to?) {
     for slurp-lines($filename) -> $line {
         next if skip-line($line);
@@ -241,6 +247,7 @@ sub PNameAliases (Str $filename, %aliases, %aliases_to?) {
         }
     }
 }
+}}
 sub write-file ( Str $filename is copy, Str $text ) {
     $filename ~~ s/ ^ \W //;
     my $file = "$build-folder/$filename";
@@ -378,7 +385,7 @@ sub get-pvalue-seen (Str $property, $negname) {
 }
 multi sub enumerated-property ( 1, $negname, Str $propname, Str $filename ) {
     my %seen-value = nqp::hash;
-    die $propname unless %PropertyValueAliases{$propname}:exists;
+    #die $propname unless %PropertyValueAliases{$propname}:exists;
     my Int $i = 0;
     my $t1 = now;
     for slurp-lines($filename) {
@@ -940,8 +947,8 @@ sub dump-json ( Bool $dump ) {
         write-file(%points.VAR.name ~ '.perl.p6',  %points.perl);
         write-file(%decomp_spec.VAR.name ~ '.perl.p6',  %decomp_spec.perl);
     }
-    for %binary-properties, %PropertyValueAliases,
-       %PropertyNameAliases, %PropertyNameAliases_to, %PropertyValueAliases_to {
+    for %binary-properties,
+       %PropertyNameAliases_to, %PropertyValueAliases_to {
         write-file(.VAR.name ~ '.perl.p6', $_.perl);
     }
     write-file(%enumerated-properties.VAR.name ~ '.perl.p6', %enumerated-properties.perl);
