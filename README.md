@@ -14,6 +14,9 @@ Install all dependant modules, if you have zef:
 Download the Unicode database files:
 `perl6 UCD-download.p6`
 
+Then make sure ./Unicode-Grant which is a git submodule is also checked out
+`git submodule update --init --recursive`
+
 Generate the C files with
 `perl6 UCD-gen.p6`
 
