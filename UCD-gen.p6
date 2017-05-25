@@ -39,13 +39,19 @@ my %decomp_spec;
 =head2 C<%decomp_spec>
 =para Stores the decomposition data for decomposition
 
-my %PropertyValueAliases;
 my %PropertyValueAliases_to;
-=head2 C<%PropertyValueAliases %PropertyValueAliases_to>
+=head2 C<%PropertyValueAliases_to>
 =para Stores PropertyValueAliases from PropertyValueAliases.txt
-Used to go from short names that may be used in the data files to the full names
+Used to go from short property value names to full names.
+Is a hash where the keys are full length property names, and the level below
+that has keys of property value alias names and the values are full property
+value names.
+=head4 Example:
+=for code
+Bidi_Class => ${:AL("Arabic_Letter"), :AN("Arabic_Number"),
+    :Arabic_Letter("Arabic_Letter"), :Arabic_Number("Arabic_Number"),
+    :B("Paragraph_Separator"), :BN("Boundary_Neutral") }
 
-#my %PropertyNameAliases;
 my %PropertyNameAliases_to;
 =head2 C<%PropertyNameAliases %PropertyNameAliases_to>
 =para Stores Property Aliases or Property Value Aliases to their Full Name mappings
@@ -65,9 +71,7 @@ sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
     use lib 'Unicode-Grant/lib';
     use PropertyAliases;
     use PropertyValueAliases;
-    %PropertyNameAliases_to = GetPropertyAliasesLookupHash;
-    #PNameAliases("PropertyAliases", %PropertyNameAliases, %PropertyNameAliases_to);
-    #PValueAliases("PropertyValueAliases", %PropertyValueAliases, %PropertyValueAliases_to);
+    %PropertyNameAliases_to  = GetPropertyAliasesLookupHash;
     %PropertyValueAliases_to = GetPropertyValue-to-long-value-LookupHash;
     timer('UnicodeData');
     UnicodeData("UnicodeData", $less, $no-UnicodeData);
@@ -146,24 +150,6 @@ sub missing (Str $line is copy) {
     my @parts = $line.split(';')».trim;
     %missing{@parts[1]} = @parts[2];
 }
-sub PValueAliases (Str $filename, %aliases, %aliases_to?) {
-    for slurp-lines($filename) -> $line {
-        next if skip-line($line);
-        my @parts = $line.split(';')».trim;
-        my $prop-name = @parts.shift;
-        my $short-pvalue = @parts.shift;
-        my $long-pvalue = @parts[0];
-        $prop-name = get-full-propname($prop-name);
-        %aliases{$prop-name}{$short-pvalue} = @parts;
-        if defined %aliases_to {
-            %aliases_to{$prop-name}{$long-pvalue} = $long-pvalue;
-            %aliases_to{$prop-name}{$short-pvalue} = $long-pvalue;
-            for @parts {
-                %aliases_to{$prop-name}{$_} = $long-pvalue;
-            }
-        }
-    }
-}
 sub done-editing-points {
     timer 'sorting cp';
     my str @sorted = %points.keys.sort(*.Int);
@@ -229,25 +215,6 @@ class pvalue-seen {
         %!enum;
     }
 }
-#`{{
-sub PNameAliases (Str $filename, %aliases, %aliases_to?) {
-    for slurp-lines($filename) -> $line {
-        next if skip-line($line);
-        my @parts = $line.split(';')».trim;
-        my $short-name = @parts.shift;
-        my $long-name = @parts.shift;
-        push %aliases{$long-name}, $short-name;
-        push %aliases{$long-name}, $_ for @parts;
-        if defined %aliases_to {
-            %aliases_to{$long-name} = $long-name;
-            %aliases_to{$short-name} = $long-name;
-            for @parts {
-                %aliases_to{$_} = $long-name;
-            }
-        }
-    }
-}
-}}
 sub write-file ( Str $filename is copy, Str $text ) {
     $filename ~~ s/ ^ \W //;
     my $file = "$build-folder/$filename";
@@ -385,7 +352,6 @@ sub get-pvalue-seen (Str $property, $negname) {
 }
 multi sub enumerated-property ( 1, $negname, Str $propname, Str $filename ) {
     my %seen-value = nqp::hash;
-    #die $propname unless %PropertyValueAliases{$propname}:exists;
     my Int $i = 0;
     my $t1 = now;
     for slurp-lines($filename) {
