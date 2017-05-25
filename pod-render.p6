@@ -13,6 +13,9 @@ Install all dependant modules, if you have zef:
 Download the Unicode database files:
 `perl6 UCD-download.p6`
 
+Then make sure ./Unicode-Grant which is a git submodule is also checked out
+`cd Unicode-Grant && git pull && cd ..`
+
 Generate the C files with
 `perl6 UCD-gen.p6`
 
@@ -25,13 +28,15 @@ my @files = "UCD-gen.p6", "lib/UCDlib.pm6", "lib/bitfield-rows-switch.pm6";
 #say pod2markdown($=pod);
 my $text;
 my @prom = do for @files -> $file {
-    start { "\n# $file\n\n" ~ run("perl6",  "--doc=Markdown", $file.IO.abspath, :out).out.slurp-rest};
+    start {
+        "\n# $file\n\n" ~ run("perl6",  "--doc=Markdown", $file.IO.absolute, :out).out.slurp
+    }
 }
 await Promise.allof(@prom);
 my @result;
 my $i = -1;
 for @prom.map(*.result).Str.lines -> $line is copy {
-    if {
+    {
         $i++ if $line.starts-with: '```';
         $line ~~ s/'```'/```perl6/ if $i %% 2;
     }
