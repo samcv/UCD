@@ -46,10 +46,16 @@ Stores enum prop names and also the property codes which are just internal numbe
 
 Stores the decomposition data for decomposition
 
-`%PropertyValueAliases %PropertyValueAliases_to`
-------------------------------------------------
+`%PropertyValueAliases_to`
+--------------------------
 
-Stores PropertyValueAliases from PropertyValueAliases.txt Used to go from short names that may be used in the data files to the full names
+Stores PropertyValueAliases from PropertyValueAliases.txt Used to go from short property value names to full names. Is a hash where the keys are full length property names, and the level below that has keys of property value alias names and the values are full property value names.
+
+#### Example:
+
+    Bidi_Class => ${:AL("Arabic_Letter"), :AN("Arabic_Number"),
+        :Arabic_Letter("Arabic_Letter"), :Arabic_Number("Arabic_Number"),
+        :B("Paragraph_Separator"), :BN("Boundary_Neutral") }
 
 `%PropertyNameAliases %PropertyNameAliases_to`
 ----------------------------------------------
