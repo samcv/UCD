@@ -12,8 +12,13 @@ multi compose-array ( Str:D $type, Str:D $name, Cool:D $elems,
         "\n").join;
     }
 }
-multi compose-array
-    ( Str:D $type, Str:D $name, @body, Bool :$header = False, Str:D :$delim = ',' ) is export {
+multi compose-array (
+    Str:D $type,
+    Str:D $name,
+    @body where { all($_ Z~~ any(Str, Int), *) },
+    Bool :$header = False,
+    Str:D :$delim = ','
+) is export {
     say "Composing array [$name] type: $type";
     if $type.contains('char *') {
         return compose-array($type, $name, @body.elems, '"' ~ @body.join('","') ~ '"', :header($header), :$delim);
@@ -26,6 +31,16 @@ multi compose-array
     }
     compose-array($type, $name, @body.elems, @body.join(','), :header($header), :$delim);
 }
+multi compose-array (
+    Str:D $type,
+    Str:D $name,
+    @body where { .all ~~ Positional },
+    Bool :$header = False,
+    Str:D :$delim = ','
+) is export {
+    compose-array($type, $name, @body.map({ '{' ~ .map({ $_ ~~ Str ?? “"$_"” !! $_}).join(',') ~ '}' }), :$header, :$delim);
+}
+
 sub break-into-lines (Str $string, Str $breakpoint) {
     my $copy = $string;
     $copy ~~ s:g/(.**70..79 $breakpoint)/$0\n/;

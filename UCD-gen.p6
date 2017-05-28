@@ -62,6 +62,27 @@ constant @gc = 'General_Category_1', 'General_Category_2';
 my %point-index = nqp::hash;
 my $debug-global = False;
 my int $bin-index = -1;
+sub WritePropertyValueHashes {
+    use lib 'Unicode-Grant/lib';
+    use PropertyValueAliases;
+    my %lh = GetPropertyValueLookupHash;
+    my @property-value-c-arrays;
+    for %lh.kv -> $key, $value {
+        my @values = $value»[1];
+        my @a;
+        for ^$value.elems -> $elem {
+            for $value[$elem].list {
+                @a.push: ($_, $elem, $_.codes);
+            }
+        }
+        @property-value-c-arrays.push: 'int ' ~ %PropertyNameAliases_to{$key} ~ '_elems = ' ~ @a.elems ~ ';';
+        @property-value-c-arrays.push: compose-array('MVMUnicodeNamedAlias', %PropertyNameAliases_to{$key} // die, @a // die);
+    }
+    say slurp-snippets('alias', 'header');
+    my $varr = slurp-snippets('alias', 'header');
+    my $var-end = slurp-snippets('alias', 'main');
+    write-file("property-value-c-array.c", $varr ~ @property-value-c-arrays.join("\n") ~ $var-end);
+}
 sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
            Bool:D :$debug = False, Bool:D :$names-only = False, Bool:D :$no-UnicodeData = False,
            Bool:D :$no-names = False, Str :$only? ) {
@@ -73,6 +94,7 @@ sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
     use PropertyValueAliases;
     %PropertyNameAliases_to  = GetPropertyAliasesLookupHash;
     %PropertyValueAliases_to = GetPropertyValue-to-long-value-LookupHash;
+    WritePropertyValueHashes;
     timer('UnicodeData');
     UnicodeData("UnicodeData", $less, $no-UnicodeData);
     die Dump %points unless %points{0}:exists;
