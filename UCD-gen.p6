@@ -147,15 +147,15 @@ sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
     my str @sorted-cp;
     unless $names-only {
         constant @enum-data =
-            (1, 'N', 'East_Asian_Width', 'extracted/DerivedEastAsianWidth'),
-            (1, 'None', 'Numeric_Type', 'extracted/DerivedNumericType'),
-            (1, 'Other', 'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty'),
-            (1, '', 'Jamo_Short_Name', 'Jamo'),
-            (1, 'L', 'Bidi_Class', 'extracted/DerivedBidiClass'),
-            (1, 'No_Joining_Group', 'Joining_Group', 'extracted/DerivedJoiningGroup'),
-            (1, 'Non_Joining', 'Joining_Type', 'extracted/DerivedJoiningType'),
-            (1, 'Other', 'Word_Break', 'auxiliary/WordBreakProperty'),
-            (1, 'XX', 'Line_Break', 'LineBreak');
+            (1, 'N',                'East_Asian_Width',       'extracted/DerivedEastAsianWidth'),
+            (1, 'None',             'Numeric_Type',           'extracted/DerivedNumericType'),
+            (1, 'Other',            'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty'),
+            (1, '',                 'Jamo_Short_Name',        'Jamo'),
+            (1, 'L',                'Bidi_Class',             'extracted/DerivedBidiClass'),
+            (1, 'No_Joining_Group', 'Joining_Group',          'extracted/DerivedJoiningGroup'),
+            (1, 'Non_Joining',      'Joining_Type',           'extracted/DerivedJoiningType'),
+            (1, 'Other',            'Word_Break',             'auxiliary/WordBreakProperty'),
+            (1, 'XX',               'Line_Break',             'LineBreak');
         constant @bin-data =
             (1, 'extracted/DerivedBinaryProperties'),
             (1, 'PropList'),
