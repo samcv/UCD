@@ -17,6 +17,8 @@ bitfield-release: source/bitfield.c
 	mkdir -p $(build_folder) && cd $(source_folder) && $(comp) bitfield.c -o ../$(build_folder)/bitfield
 names-debug: source/names.c
 	mkdir -p $(build_folder) && cd $(source_folder) && $(comp) $(debug_flags) names.c -o ../$(build_folder)/names
+alias: source/property-value-c-array.c
+	mkdir -p $(build_folder) && cd $(source_folder) && $(comp) $(debug_flags) property-value-c-array.c -o ../$(build_folder)/property-value-c-array
 clean:
 	rm -rf $(build_folder)
 realclean: clean

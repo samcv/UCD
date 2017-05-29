@@ -36,9 +36,10 @@ multi compose-array (
     Str:D $name,
     @body where { .all ~~ Positional },
     Bool :$header = False,
-    Str:D :$delim = ','
+    Str:D :$delim = ',',
+    Bool:D :$no-quoting = False
 ) is export {
-    compose-array($type, $name, @body.map({ '{' ~ .map({ $_ ~~ Str ?? “"$_"” !! $_}).join(',') ~ '}' }), :$header, :$delim);
+    compose-array($type, $name, @body.map({ '{' ~ .map({ (!$no-quoting && $_ ~~ Str) ?? “"$_"” !! $_}).join(',') ~ '}' }), :$header, :$delim);
 }
 
 sub break-into-lines (Str $string, Str $breakpoint) {
