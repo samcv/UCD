@@ -120,13 +120,7 @@ sub WritePropertyValueHashes {
     my $varr = slurp-snippets('alias', 'header');
     my $var-end = slurp-snippets('alias', 'main');
     my $mapping = compose-array('struct mapping_struct', 'mapping', @internal, :no-quoting);
-    my $map-h = Q:to/END/;
-    struct mapping_struct {
-        MVMUnicodeNamedAlias *alias;
-        int elems;
-    };
-    END
-    write-file("property-value-c-array.c", $varr ~ $property-alias ~ @property-value-c-arrays.join("\n") ~ $map-h ~ $mapping ~ $var-end);
+    write-file("property-value-c-array.c", $varr ~ $property-alias ~ @property-value-c-arrays.join("\n") ~ $mapping ~ $var-end);
 }
 sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
            Bool:D :$debug = False, Bool:D :$names-only = False, Bool:D :$no-UnicodeData = False,
