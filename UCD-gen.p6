@@ -66,7 +66,7 @@ sub WritePropertyValueHashes {
     use lib 'Unicode-Grant/lib';
     use PropertyValueAliases;
     use PropertyAliases;
-    my %lh = GetPropertyValueLookupHash;
+    my %lh = GetPropertyValueLookupHash(:!use-short-pnames);
     my %pa = GetPropertyAliases<long>;
     my %prop-lookp = GetPropertyAliasesLookupHash;
     my @aliasnames;
@@ -90,22 +90,20 @@ sub WritePropertyValueHashes {
             %pnamecode{%prop-lookp{$pname}} = $i;
         }
     }
-    # .sort(&[unicmp])
     @aliasnames = @aliasnames.sort({$^a[0] unicmp $^b[0]}).unique(:with(&[eqv]));
     my @property-value-c-arrays;
-    #`[[
-    my Int $internal-propcode = 0;
     my @internal;
-    ]]
-    for %lh.kv -> $key, $value {
-    #`[[for %pnamecode.sort(*.value.Int) -> $key {
-        next if %pnamecode{$key}:!exists;
-        my $value = %pnamecode{$key};
-        ]]
-        my @values = $value»[1];
+    for %pnamecode.sort(*.value.Int) -> $kv {
+        say $kv.perl;
+        my $key = $kv.key;
+        if %lh{$key}:!exists {
+            die "$key doesn't exist in hash\n" ~ %lh.perl;
+        }
+        my $values = %lh{$key} // die;
+        my $internal-propcode = $kv.value // die;
         my @a;
-        for ^$value.elems -> $elem {
-            for $value[$elem].list {
+        for ^$values.elems -> $elem {
+            for $values[$elem].list {
                 @a.push: ($_, $elem, $_.codes);
             }
         }
@@ -115,12 +113,21 @@ sub WritePropertyValueHashes {
         @property-value-c-arrays.push: 'int ' ~ %PropertyNameAliases_to{$key} ~ '_elems = ' ~ @a.elems ~ ';';
         @property-value-c-arrays.push: compose-array('MVMUnicodeNamedAlias', %PropertyNameAliases_to{$key} // die, @a // die);
     }
-    say slurp-snippets('alias', 'header');
-    my $property-alias = compose-array('MVMUnicodeNamedAlias', 'alias_names', @aliasnames);
-    my $varr = slurp-snippets('alias', 'header');
+    my $property-alias = compose-array('MVMUnicodeNamedAlias', 'alias_names', @aliasnames.sort(*[1].Int) );
+    $property-alias ~= "\nint alias_names_elems = " ~ @aliasnames.elems ~ ';';
+    @property-value-c-arrays.unshift: $property-alias;
+    @property-value-c-arrays.unshift: slurp-snippets('alias', 'header');
     my $var-end = slurp-snippets('alias', 'main');
-    my $mapping = compose-array('struct mapping_struct', 'mapping', @internal, :no-quoting);
-    write-file("property-value-c-array.c", $varr ~ $property-alias ~ @property-value-c-arrays.join("\n") ~ $mapping ~ $var-end);
+    my $mapping = Q:to/END/;
+    struct mapping_struct {
+        MVMUnicodeNamedAlias *alias;
+        int elems;
+    };
+    END
+    $mapping ~= compose-array('struct mapping_struct', 'mapping', @internal, :no-quoting);
+    @property-value-c-arrays.push: $mapping;
+    @property-value-c-arrays.push: $var-end;
+    write-file("property-value-c-array.c", @property-value-c-arrays.join("\n") );
 }
 sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
            Bool:D :$debug = False, Bool:D :$names-only = False, Bool:D :$no-UnicodeData = False,

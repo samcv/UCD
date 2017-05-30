@@ -14,20 +14,29 @@ MVMUnicodeNamedAlias_hash* load_hash_3 (MVMUnicodeNamedAlias *thingy, int elems)
         kv->pvaluecode = thingy[i].pvaluecode;
         HASH_ADD_KEYPTR(hh, users, kv->name, thingy[i].strlen, kv);
     }
+    printf("Loaded %i elems into hash %p\n", elems, thingy);
     return users;
 }
-int main (void) {
-    MVMUnicodeNamedAlias_hash *users = load_hash_3(mapping[20].alias, mapping[20].elems);
+int find (MVMUnicodeNamedAlias_hash *my_hash, char *query) {
     MVMUnicodeNamedAlias_hash *kv;
-    int found;
-    char *query;
-    printf("searching\n");
-    query = "Extend";
-    HASH_FIND(hh, users, query, strlen(query), kv);
+    HASH_FIND(hh, my_hash, query, strlen(query), kv);
     if (!kv) {
-        return 1;
+        printf("Couldn't find %s\n", query);
+        return -1;
     }
-    printf("after\n");
-    printf("%s  %i\n", query, kv->pvaluecode);
+    printf("%s %i\n", query, kv->pvaluecode);
+    return kv->pvaluecode;
+}
+
+int main (void) {
+    MVMUnicodeNamedAlias_hash *kv;
+    MVMUnicodeNamedAlias_hash *alias_names_hash = load_hash_3(alias_names, alias_names_elems);
+    char *query = "Glue_After_Zwj";
+    char *property_name = "Grapheme_Cluster_Break";
+    int propcode = find(alias_names_hash, property_name);
+    if (propcode >= 0) {
+        MVMUnicodeNamedAlias_hash *pvalue_hash = load_hash_3(mapping[propcode].alias, mapping[propcode].elems);
+        find(pvalue_hash, query);
+    }
     return 0;
 }
