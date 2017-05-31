@@ -109,13 +109,18 @@ sub WritePropertyValueHashes {
             }
         }
         @a = @a.sort.unique(:with(&[eqv]));
-        @internal.push: (%PropertyNameAliases_to{$key}, @a.elems);
+        @internal.push: ('NULL', %PropertyNameAliases_to{$key}, @a.elems);
         @property-value-c-arrays.push: "/* {$internal-propcode++} */";
         @property-value-c-arrays.push: 'int ' ~ %PropertyNameAliases_to{$key} ~ '_elems = ' ~ @a.elems ~ ';';
         @property-value-c-arrays.push: compose-array('MVMUnicodeNamedAlias', %PropertyNameAliases_to{$key} // die, @a.sort(*[1].Int) // die);
     }
     my $property-alias = compose-array('MVMUnicodeNamedAlias', 'alias_names', @aliasnames.sort(*[1].Int) );
-    $property-alias ~= "\nint alias_names_elems = " ~ @aliasnames.elems ~ ';';
+    @property-value-c-arrays.push: qq:to/END/;
+    hash_pre alias_names_hash = \{
+        NULL, alias_names, @aliasnames.elems()
+    \};
+    END
+    #"\nint alias_names_elems = " ~ @aliasnames.elems ~ ';';
     @property-value-c-arrays.unshift: $property-alias;
     @property-value-c-arrays.unshift: slurp-snippets('alias', 'header');
     my $var-end = slurp-snippets('alias', 'main');
@@ -125,7 +130,7 @@ sub WritePropertyValueHashes {
         int elems;
     };
     END
-    $mapping ~= compose-array('struct mapping_struct', 'mapping', @internal, :no-quoting);
+    $mapping ~= compose-array('struct hash_pre', 'mapping', @internal, :no-quoting);
     @property-value-c-arrays.push: $mapping;
     @property-value-c-arrays.push: $var-end;
     write-file("property-value-c-array.c", @property-value-c-arrays.join("\n") );

@@ -1,9 +1,3 @@
-struct MVMUnicodeNamedAlias_hash {
-    const char *name;
-    int pvaluecode;
-    UT_hash_handle hh;
-};
-typedef struct MVMUnicodeNamedAlias_hash MVMUnicodeNamedAlias_hash;
 MVMUnicodeNamedAlias_hash* load_hash_3 (MVMUnicodeNamedAlias *thingy, int elems) {
     int i;
     struct MVMUnicodeNamedAlias_hash *users = NULL;
@@ -16,6 +10,11 @@ MVMUnicodeNamedAlias_hash* load_hash_3 (MVMUnicodeNamedAlias *thingy, int elems)
     }
     printf("Loaded %i elems into hash %p\n", elems, thingy);
     return users;
+}
+int load_pvalue_hash (hash_pre *pre) {
+    if (!pre->hash)
+        pre->hash = load_hash_3(pre->source, pre->elems);
+    return pre->hash ? 1 : 0;
 }
 int normalize (char *input, char *output) {
     int strlen_ = strlen(input);
@@ -52,20 +51,30 @@ int find (MVMUnicodeNamedAlias_hash *my_hash, char *query) {
     printf("%s %i\n", query, kv->pvaluecode);
     return kv->pvaluecode;
 }
-
+int lookup_propcode (char *query, hash_pre *alias_names_hash) {
+    if (!alias_names_hash->hash)
+        alias_names_hash->hash = load_hash_3(alias_names_hash->source, alias_names_hash->elems);
+    return find(alias_names_hash->hash, query);
+}
+int lookup_pvalue (int propcode, char *query) {
+    if (0 <= propcode) {
+        fprintf(stderr, "Can't look up propcode '%i', 0 or below not allowed\n");
+        return -1;
+    }
+    load_pvalue_hash(&mapping[propcode - 1]);
+    return find(mapping[propcode - 1].hash, query);
+}
 int main (int argc, char *argv[]) {
     MVMUnicodeNamedAlias_hash *kv;
-    MVMUnicodeNamedAlias_hash *alias_names_hash = load_hash_3(alias_names, alias_names_elems);
     char *query = "Glue_After_Zwj";
     char *property_name = "Grapheme_Cluster_Break";
     if (2 <= argc) {
         property_name = argv[1];
         query = argv[2];
     }
-    int propcode = find(alias_names_hash, property_name);
+    int propcode = lookup_propcode(property_name, &alias_names_hash);
     if (0 <= propcode) {
-        MVMUnicodeNamedAlias_hash *pvalue_hash = load_hash_3(mapping[propcode - 1].alias, mapping[propcode - 1].elems);
-        find(pvalue_hash, query);
+        lookup_pvalue(propcode, query);
         return 0;
     }
     return 1;
