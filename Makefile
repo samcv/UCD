@@ -2,7 +2,7 @@ source_folder = source
 build_folder = build
 debug_flags = --debug=3 -O0
 comp_flags = -std=c99
-compilier = gcc
+compilier = clang
 comp = $(compilier) $(comp_flags)
 
 all: names-debug bitfield-debug
