@@ -131,9 +131,17 @@ sub WritePropertyValueHashes {
     write-file("property-value-c-array.c", @property-value-c-arrays.join("\n") );
     return %pnamecode;
 }
-sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
-           Bool:D :$debug = False, Bool:D :$names-only = False, Bool:D :$no-UnicodeData = False,
-           Bool:D :$no-names = False, Str :$only? ) {
+sub MAIN (
+Bool:D :$dump = False,
+Bool:D :$nomake = False,
+Int:D  :$less = 0,
+Bool:D :$debug = False,
+Bool:D :$names-only = False,
+Bool:D :$no-UnicodeData = False,
+Bool:D :$no-names = False,
+Bool:D :$pvalue-hashes-only = False,
+Str    :$only?
+) {
     my @only = $only ?? $only.split( [',', ' '] ) !! Empty;
     $debug-global = $debug;
     start-routine();
@@ -143,6 +151,7 @@ sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
     %PropertyNameAliases_to  = GetPropertyAliasesLookupHash;
     %PropertyValueAliases_to = GetPropertyValue-to-long-value-LookupHash;
     my %enum-property-name-codes = WritePropertyValueHashes;
+    exit if $pvalue-hashes-only;
     timer('UnicodeData');
     UnicodeData("UnicodeData", $less, $no-UnicodeData);
     die Dump %points unless %points{0}:exists;
@@ -150,15 +159,15 @@ sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
     my str @sorted-cp;
     unless $names-only {
         constant @enum-data =
-            (1, 'N',                'East_Asian_Width',       'extracted/DerivedEastAsianWidth'),
-            (1, 'None',             'Numeric_Type',           'extracted/DerivedNumericType'),
-            (1, 'Other',            'Grapheme_Cluster_Break', 'auxiliary/GraphemeBreakProperty'),
-            (1, '',                 'Jamo_Short_Name',        'Jamo'),
-            (1, 'L',                'Bidi_Class',             'extracted/DerivedBidiClass'),
-            (1, 'No_Joining_Group', 'Joining_Group',          'extracted/DerivedJoiningGroup'),
-            (1, 'Non_Joining',      'Joining_Type',           'extracted/DerivedJoiningType'),
-            (1, 'Other',            'Word_Break',             'auxiliary/WordBreakProperty'),
-            (1, 'XX',               'Line_Break',             'LineBreak');
+            (1, 'East_Asian_Width',       'N',                'extracted/DerivedEastAsianWidth'),
+            (1, 'Numeric_Type',           'None',             'extracted/DerivedNumericType'),
+            (1, 'Grapheme_Cluster_Break', 'Other',            'auxiliary/GraphemeBreakProperty'),
+            (1, 'Jamo_Short_Name',        '',                 'Jamo'),
+            (1, 'Bidi_Class',             'L',                'extracted/DerivedBidiClass'),
+            (1, 'Joining_Group',          'No_Joining_Group', 'extracted/DerivedJoiningGroup'),
+            (1, 'Joining_Type',           'Non_Joining',      'extracted/DerivedJoiningType'),
+            (1, 'Word_Break',             'Other',            'auxiliary/WordBreakProperty'),
+            (1, 'Line_Break',             'XX',               'LineBreak');
         constant @bin-data =
             (1, 'extracted/DerivedBinaryProperties'),
             (1, 'PropList'),
@@ -172,7 +181,7 @@ sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
         }
         elsif @only {
             for @only -> $prop {
-                if @enum-data.first({ $_[2] eq $prop }) {
+                if @enum-data.first({ $_[1] eq $prop }) {
                     enumerated-property( |@enum-data.first({ $_[2] eq $prop }) )
                 }
                 elsif @bin-data.first({ $_[1] eq $prop }) {
@@ -420,7 +429,7 @@ sub get-pvalue-seen (Str $property, $negname) {
         return %enumerated-properties{$property};
     }
 }
-multi sub enumerated-property ( 1, $negname, Str $propname, Str $filename ) {
+multi sub enumerated-property ( 1, Str $propname, $negname, Str $filename ) {
     my %seen-value = nqp::hash;
     my Int $i = 0;
     my $t1 = now;
