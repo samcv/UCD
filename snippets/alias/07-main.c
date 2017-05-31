@@ -8,7 +8,7 @@ MVMUnicodeNamedAlias_hash* load_hash_3 (MVMUnicodeNamedAlias *thingy, int elems)
         kv->pvaluecode = thingy[i].pvaluecode;
         HASH_ADD_KEYPTR(hh, users, kv->name, thingy[i].strlen, kv);
     }
-    printf("Loaded %i elems into hash %p\n", elems, thingy);
+    fprintf(stderr, "Loaded %i elems into hash %p\n", elems, thingy);
     return users;
 }
 int load_pvalue_hash (hash_pre *pre) {
@@ -32,7 +32,7 @@ int normalize (char *input, char *output) {
     output[b] = '\0';
     return b;
 }
-int find (MVMUnicodeNamedAlias_hash *my_hash, char *query) {
+int find (MVMUnicodeNamedAlias_hash *my_hash, char *query, char *text) {
     MVMUnicodeNamedAlias_hash *kv;
     HASH_FIND(hh, my_hash, query, strlen(query), kv);
     if (!kv) {
@@ -48,21 +48,21 @@ int find (MVMUnicodeNamedAlias_hash *my_hash, char *query) {
             fprintf(stderr, "Found using normalized version %s\n", new);
         }
     }
-    printf("%s %i\n", query, kv->pvaluecode);
+    printf("%s %s %i\n", text, query, kv->pvaluecode);
     return kv->pvaluecode;
 }
 int lookup_propcode (char *query, hash_pre *alias_names_hash) {
     if (!alias_names_hash->hash)
         alias_names_hash->hash = load_hash_3(alias_names_hash->source, alias_names_hash->elems);
-    return find(alias_names_hash->hash, query);
+    return find(alias_names_hash->hash, query, "propcode");
 }
 int lookup_pvalue (int propcode, char *query) {
-    if (0 <= propcode) {
+    if (propcode <= 0) {
         fprintf(stderr, "Can't look up propcode '%i', 0 or below not allowed\n");
         return -1;
     }
     load_pvalue_hash(&mapping[propcode - 1]);
-    return find(mapping[propcode - 1].hash, query);
+    return find(mapping[propcode - 1].hash, query, "pvalue");
 }
 int main (int argc, char *argv[]) {
     MVMUnicodeNamedAlias_hash *kv;

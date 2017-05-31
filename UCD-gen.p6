@@ -93,6 +93,11 @@ sub WritePropertyValueHashes {
     @aliasnames = @aliasnames.sort({$^a[0] unicmp $^b[0]}).unique(:with(&[eqv]));
     my @property-value-c-arrays;
     my @internal;
+    # This section of code generates hash data for property values aliases
+
+    # Holds the pvalue alias array data for each propcode. Is used for deduplication
+    my @pvalue-arrays;
+    my Int $last = 0;
     for %pnamecode.sort(*.value.Int) -> $kv {
         say $kv.perl;
         my $key = $kv.key;
@@ -101,7 +106,17 @@ sub WritePropertyValueHashes {
         }
         my $values = %lh{$key} // die;
         my $internal-propcode = $kv.value // die;
+        # In case we are missing some, put some placeholders in there
+        if $internal-propcode != $last + 1 {
+            say "MISSING internal propcode: $internal-propcode last: $last";
+            for ^($internal-propcode - $last - 1) {
+                @internal.push: ('NULL', 'NULL', 0);
+            }
+        }
+        $last = $internal-propcode;
         my @a;
+        my $is-dupe = False;
+        my $alias_c_array_name = %PropertyNameAliases_to{$key};
         for ^$values.elems -> $elem {
             for $values[$elem].list {
                 @a.push: ($_, $elem, $_.codes);
@@ -109,10 +124,26 @@ sub WritePropertyValueHashes {
             }
         }
         @a = @a.sort.unique(:with(&[eqv]));
-        @internal.push: ('NULL', %PropertyNameAliases_to{$key}, @a.elems);
-        @property-value-c-arrays.push: "/* {$internal-propcode++} */";
-        @property-value-c-arrays.push: 'int ' ~ %PropertyNameAliases_to{$key} ~ '_elems = ' ~ @a.elems ~ ';';
-        @property-value-c-arrays.push: compose-array('MVMUnicodeNamedAlias', %PropertyNameAliases_to{$key} // die, @a.sort(*[1].Int) // die);
+        my $text = '';
+        for ^@pvalue-arrays.elems -> $index {
+            if @pvalue-arrays[$index] eqv @a {
+                for %pnamecode -> $pair {
+                    if $index == $pair.value {
+                        $alias_c_array_name = $pair.key;
+                        $is-dupe = True;
+                        $text = " linked from propcode $index and $pair.key()";
+                        say $key, ' as ', $alias_c_array_name;
+                    }
+                }
+            }
+        }
+        @pvalue-arrays[$internal-propcode] = @a unless $is-dupe;
+        @internal.push: ('NULL', $alias_c_array_name, @a.elems);
+        @property-value-c-arrays.push: "/* {$internal-propcode} {%PropertyNameAliases_to{$key}} $text */";
+        #@property-value-c-arrays.push: 'int ' ~ %PropertyNameAliases_to{$key} ~ '_elems = ' ~ @a.elems ~ ';';
+        @property-value-c-arrays.push: compose-array('MVMUnicodeNamedAlias', $alias_c_array_name // die, @a.sort(*[1].Int) // die)
+            unless $is-dupe;
+        $internal-propcode++;
     }
     my $property-alias = compose-array('MVMUnicodeNamedAlias', 'alias_names', @aliasnames.sort(*[1].Int) );
     @property-value-c-arrays.push: qq:to/END/;
