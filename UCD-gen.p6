@@ -112,7 +112,7 @@ sub WritePropertyValueHashes {
         @internal.push: (%PropertyNameAliases_to{$key}, @a.elems);
         @property-value-c-arrays.push: "/* {$internal-propcode++} */";
         @property-value-c-arrays.push: 'int ' ~ %PropertyNameAliases_to{$key} ~ '_elems = ' ~ @a.elems ~ ';';
-        @property-value-c-arrays.push: compose-array('MVMUnicodeNamedAlias', %PropertyNameAliases_to{$key} // die, @a // die);
+        @property-value-c-arrays.push: compose-array('MVMUnicodeNamedAlias', %PropertyNameAliases_to{$key} // die, @a.sort(*[1].Int) // die);
     }
     my $property-alias = compose-array('MVMUnicodeNamedAlias', 'alias_names', @aliasnames.sort(*[1].Int) );
     $property-alias ~= "\nint alias_names_elems = " ~ @aliasnames.elems ~ ';';
