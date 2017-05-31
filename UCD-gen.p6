@@ -129,6 +129,7 @@ sub WritePropertyValueHashes {
     @property-value-c-arrays.push: $mapping;
     @property-value-c-arrays.push: $var-end;
     write-file("property-value-c-array.c", @property-value-c-arrays.join("\n") );
+    return %pnamecode;
 }
 sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
            Bool:D :$debug = False, Bool:D :$names-only = False, Bool:D :$no-UnicodeData = False,
@@ -141,7 +142,7 @@ sub MAIN ( Bool:D :$dump = False, Bool:D :$nomake = False, Int:D :$less = 0,
     use PropertyValueAliases;
     %PropertyNameAliases_to  = GetPropertyAliasesLookupHash;
     %PropertyValueAliases_to = GetPropertyValue-to-long-value-LookupHash;
-    WritePropertyValueHashes;
+    my %enum-property-name-codes = WritePropertyValueHashes;
     timer('UnicodeData');
     UnicodeData("UnicodeData", $less, $no-UnicodeData);
     die Dump %points unless %points{0}:exists;
