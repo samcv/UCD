@@ -72,6 +72,9 @@ sub WritePropertyValueHashes {
     my @aliasnames;
     my $i = -1;
     my %pnamecode;
+    sub normalize (Str:D $name) {
+        $name.subst('_', '', :g).lc;
+    }
     for %pa.keys.sort(&[unicmp]) -> $key {
         for %pa{$key}.list -> $pname {
             my $propcode;
@@ -81,11 +84,8 @@ sub WritePropertyValueHashes {
             else {
                 $propcode = ++$i;
             }
-            my $no-underscore = $pname.subst('_', '', :g);
             @aliasnames.push: (            $pname, $propcode, $pname.codes);
-            @aliasnames.push: (    $no-underscore, $propcode, $pname.codes);
-            @aliasnames.push: (         $pname.lc, $propcode, $pname.codes);
-            @aliasnames.push: ( $no-underscore.lc, $propcode, $pname.codes);
+            @aliasnames.push: (  normalize($pname), $propcode, normalize($pname).codes);
 
             %pnamecode{%prop-lookp{$pname}} = $i;
         }
@@ -105,9 +105,10 @@ sub WritePropertyValueHashes {
         for ^$values.elems -> $elem {
             for $values[$elem].list {
                 @a.push: ($_, $elem, $_.codes);
+                @a.push: (normalize($_), $elem, normalize($_).codes);
             }
         }
-        #&[unicmp]
+        @a = @a.sort.unique(:with(&[eqv]));
         @internal.push: (%PropertyNameAliases_to{$key}, @a.elems);
         @property-value-c-arrays.push: "/* {$internal-propcode++} */";
         @property-value-c-arrays.push: 'int ' ~ %PropertyNameAliases_to{$key} ~ '_elems = ' ~ @a.elems ~ ';';
