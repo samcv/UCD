@@ -70,7 +70,7 @@ sub WritePropertyValueHashes {
     my %pa = GetPropertyAliases<long>;
     my %prop-lookp = GetPropertyAliasesLookupHash;
     my @aliasnames;
-    my $i = -1;
+    my $i = 0;
     my %pnamecode;
     sub normalize (Str:D $name) {
         $name.subst('_', '', :g).lc;

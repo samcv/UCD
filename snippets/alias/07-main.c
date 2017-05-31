@@ -64,7 +64,7 @@ int main (int argc, char *argv[]) {
     }
     int propcode = find(alias_names_hash, property_name);
     if (0 <= propcode) {
-        MVMUnicodeNamedAlias_hash *pvalue_hash = load_hash_3(mapping[propcode].alias, mapping[propcode].elems);
+        MVMUnicodeNamedAlias_hash *pvalue_hash = load_hash_3(mapping[propcode - 1].alias, mapping[propcode - 1].elems);
         find(pvalue_hash, query);
         return 0;
     }
