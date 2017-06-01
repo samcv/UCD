@@ -21,3 +21,9 @@ struct hash_pre {
     int elems;
 };
 typedef struct hash_pre hash_pre;
+
+struct mapping_struct {
+    MVMUnicodeNamedAlias *alias;
+    int elems;
+};
+typedef struct mapping_struct mapping_struct;

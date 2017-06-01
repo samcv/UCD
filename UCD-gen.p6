@@ -92,12 +92,13 @@ sub WritePropertyValueHashes {
     }
     @aliasnames = @aliasnames.sort({$^a[0] unicmp $^b[0]}).unique(:with(&[eqv]));
     my @property-value-c-arrays;
-    my @internal;
+    my @mapping-c-array;
     # This section of code generates hash data for property values aliases
 
     # Holds the pvalue alias array data for each propcode. Is used for deduplication
     my @pvalue-arrays;
     my Int $last = 0;
+    my @pvalue-meta-c-array;
     for %pnamecode.sort(*.value.Int) -> $kv {
         say $kv.perl;
         my $key = $kv.key;
@@ -110,7 +111,7 @@ sub WritePropertyValueHashes {
         if $internal-propcode != $last + 1 {
             say "MISSING internal propcode: $internal-propcode last: $last";
             for ^($internal-propcode - $last - 1) {
-                @internal.push: ('NULL', 'NULL', 0);
+                @mapping-c-array.push: ('NULL', 'NULL', 0);
             }
         }
         $last = $internal-propcode;
@@ -125,26 +126,27 @@ sub WritePropertyValueHashes {
         }
         @a = @a.sort.unique(:with(&[eqv]));
         my $text = '';
+        my $pvalue-c-hash = @pvalue-arrays.elems;
+        my $elems = @a.elems;
         for ^@pvalue-arrays.elems -> $index {
             if @pvalue-arrays[$index] eqv @a {
-                for %pnamecode -> $pair {
-                    if $index == $pair.value {
-                        $alias_c_array_name = $pair.key;
-                        $is-dupe = True;
-                        $text = " linked from propcode $index and $pair.key()";
-                        say $key, ' as ', $alias_c_array_name;
-                    }
-                }
+                $alias_c_array_name = "mapping[{$index − 1}].source";
+                $pvalue-c-hash = $index; #$pair.key;
+                $is-dupe = True;
             }
         }
-        @pvalue-arrays[$internal-propcode] = @a unless $is-dupe;
-        @internal.push: ('NULL', $alias_c_array_name, @a.elems);
+        @mapping-c-array.push: ('NULL', $alias_c_array_name, $elems)
+            unless $is-dupe;
+        @pvalue-meta-c-array.push: $pvalue-c-hash;
+        @pvalue-arrays.push(@a)
+            unless $is-dupe;
         @property-value-c-arrays.push: "/* {$internal-propcode} {%PropertyNameAliases_to{$key}} $text */";
         #@property-value-c-arrays.push: 'int ' ~ %PropertyNameAliases_to{$key} ~ '_elems = ' ~ @a.elems ~ ';';
         @property-value-c-arrays.push: compose-array('MVMUnicodeNamedAlias', $alias_c_array_name // die, @a.sort(*[1].Int) // die)
             unless $is-dupe;
         $internal-propcode++;
     }
+    my $pvalue-meta-c-array-str = compose-array('int', 'pvalue_meta_c_array', @pvalue-meta-c-array // die, :partition-note(','));
     my $property-alias = compose-array('MVMUnicodeNamedAlias', 'alias_names', @aliasnames.sort(*[1].Int) );
     @property-value-c-arrays.push: qq:to/END/;
     hash_pre alias_names_hash = \{
@@ -155,13 +157,8 @@ sub WritePropertyValueHashes {
     @property-value-c-arrays.unshift: $property-alias;
     @property-value-c-arrays.unshift: slurp-snippets('alias', 'header');
     my $var-end = slurp-snippets('alias', 'main');
-    my $mapping = Q:to/END/;
-    struct mapping_struct {
-        MVMUnicodeNamedAlias *alias;
-        int elems;
-    };
-    END
-    $mapping ~= compose-array('struct hash_pre', 'mapping', @internal, :no-quoting);
+    my $mapping = compose-array('hash_pre', 'mapping', @mapping-c-array, :no-quoting, :no-split).split('},{').map({$_ ~ "/*" ~ $++ ~ "*/" }).join("\},\n\{");
+    @property-value-c-arrays.push: $pvalue-meta-c-array-str;
     @property-value-c-arrays.push: $mapping;
     @property-value-c-arrays.push: $var-end;
     write-file("property-value-c-array.c", @property-value-c-arrays.join("\n") );

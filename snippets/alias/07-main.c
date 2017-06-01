@@ -1,9 +1,9 @@
 MVMUnicodeNamedAlias_hash* load_hash_3 (MVMUnicodeNamedAlias *thingy, int elems) {
     int i;
-    struct MVMUnicodeNamedAlias_hash *users = NULL;
-    struct MVMUnicodeNamedAlias_hash *kv;
+    MVMUnicodeNamedAlias_hash *users = NULL;
+    MVMUnicodeNamedAlias_hash *kv;
     for (i = 0; i < elems; i++) {
-        kv = (struct MVMUnicodeNamedAlias_hash*)malloc(sizeof(struct MVMUnicodeNamedAlias_hash));
+        kv = (MVMUnicodeNamedAlias_hash*)malloc(sizeof(MVMUnicodeNamedAlias_hash));
         kv->name = thingy[i].name;
         kv->pvaluecode = thingy[i].pvaluecode;
         HASH_ADD_KEYPTR(hh, users, kv->name, thingy[i].strlen, kv);
@@ -61,8 +61,8 @@ int lookup_pvalue (int propcode, char *query) {
         fprintf(stderr, "Can't look up propcode '%i', 0 or below not allowed\n");
         return -1;
     }
-    load_pvalue_hash(&mapping[propcode - 1]);
-    return find(mapping[propcode - 1].hash, query, "pvalue");
+    load_pvalue_hash(&mapping[ pvalue_meta_c_array[propcode - 1] ]);
+    return find(mapping[ pvalue_meta_c_array[propcode - 1] ].hash, query, "pvalue");
 }
 int main (int argc, char *argv[]) {
     MVMUnicodeNamedAlias_hash *kv;
@@ -70,10 +70,10 @@ int main (int argc, char *argv[]) {
     char *property_name = "Grapheme_Cluster_Break";
     if (2 <= argc) {
         property_name = argv[1];
-        query = argv[2];
+        if (2 < argc) query = argv[2];
     }
     int propcode = lookup_propcode(property_name, &alias_names_hash);
-    if (0 <= propcode) {
+    if (0 < propcode && 2 < argc) {
         lookup_pvalue(propcode, query);
         return 0;
     }
