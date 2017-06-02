@@ -99,9 +99,10 @@ sub WritePropertyValueHashes {
     my @pvalue-arrays;
     my Int $last = 0;
     my @pvalue-meta-c-array;
+    my %pvalue-mapping-to-property;
     for %pnamecode.sort(*.value.Int) -> $kv {
         say $kv.perl;
-        my $key = $kv.key;
+        my $key = $kv.key // die;
         if %lh{$key}:!exists {
             die "$key doesn't exist in hash\n" ~ %lh.perl;
         }
@@ -109,7 +110,7 @@ sub WritePropertyValueHashes {
         my $internal-propcode = $kv.value // die;
         # In case we are missing some, put some placeholders in there
         if $internal-propcode != $last + 1 {
-            say "MISSING internal propcode: $internal-propcode last: $last";
+            warn "MISSING internal propcode: $internal-propcode last: $last";
             for ^($internal-propcode - $last - 1) {
                 @mapping-c-array.push: ('NULL', 'NULL', 0);
             }
@@ -140,12 +141,14 @@ sub WritePropertyValueHashes {
         @pvalue-meta-c-array.push: $pvalue-c-hash;
         @pvalue-arrays.push(@a)
             unless $is-dupe;
+        %pvalue-mapping-to-property{$pvalue-c-hash}.push: %PropertyNameAliases_to{$key};
         @property-value-c-arrays.push: "/* {$internal-propcode} {%PropertyNameAliases_to{$key}} $text */";
         #@property-value-c-arrays.push: 'int ' ~ %PropertyNameAliases_to{$key} ~ '_elems = ' ~ @a.elems ~ ';';
         @property-value-c-arrays.push: compose-array('MVMUnicodeNamedAlias', $alias_c_array_name // die, @a.sort(*[1].Int) // die)
             unless $is-dupe;
         $internal-propcode++;
     }
+    my $pvalue-mapping-property-str =  "\n/*" ~ %pvalue-mapping-to-property.sort(*.key.Int)».perl.join("\n") ~ "\n*/\n";
     my $pvalue-meta-c-array-str = compose-array('int', 'pvalue_meta_c_array', @pvalue-meta-c-array // die, :partition-note(','));
     my $property-alias = compose-array('MVMUnicodeNamedAlias', 'alias_names', @aliasnames.sort(*[1].Int) );
     @property-value-c-arrays.push: qq:to/END/;
@@ -160,6 +163,7 @@ sub WritePropertyValueHashes {
     my $mapping = compose-array('hash_pre', 'mapping', @mapping-c-array, :no-quoting, :no-split).split('},{').map({$_ ~ "/*" ~ $++ ~ "*/" }).join("\},\n\{");
     @property-value-c-arrays.push: $pvalue-meta-c-array-str;
     @property-value-c-arrays.push: $mapping;
+    @property-value-c-arrays.push: $pvalue-mapping-property-str;
     @property-value-c-arrays.push: $var-end;
     write-file("property-value-c-array.c", @property-value-c-arrays.join("\n") );
     return %pnamecode;

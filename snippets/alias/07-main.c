@@ -62,6 +62,8 @@ int lookup_pvalue (int propcode, char *query) {
         return -1;
     }
     load_pvalue_hash(&mapping[ pvalue_meta_c_array[propcode - 1] ]);
+    fprintf(stderr, "pvalue_meta_c_array[propcode - 1] = pvalue_meta_c_array[%i - 1] = %i => mapping[%i]",
+    propcode, pvalue_meta_c_array[propcode - 1], pvalue_meta_c_array[propcode - 1]);
     return find(mapping[ pvalue_meta_c_array[propcode - 1] ].hash, query, "pvalue");
 }
 int main (int argc, char *argv[]) {
