@@ -109,6 +109,7 @@ sub WritePropertyValueHashes {
         my $values = %lh{$key} // die;
         my $internal-propcode = $kv.value // die;
         # In case we are missing some, put some placeholders in there
+        #`{{
         if $internal-propcode != $last + 1 {
             warn "MISSING internal propcode: $internal-propcode last: $last";
             for ^($internal-propcode - $last - 1) {
@@ -116,6 +117,7 @@ sub WritePropertyValueHashes {
             }
         }
         $last = $internal-propcode;
+        }}
         my @a;
         my $is-dupe = False;
         my $alias_c_array_name = %PropertyNameAliases_to{$key};
@@ -129,13 +131,21 @@ sub WritePropertyValueHashes {
         my $text = '';
         my $pvalue-c-hash = @pvalue-arrays.elems;
         my $elems = @a.elems;
-        for ^@pvalue-arrays.elems -> $index {
-            if @pvalue-arrays[$index] eqv @a {
-                $alias_c_array_name = "mapping[{$index − 1}].source";
-                $pvalue-c-hash = $index; #$pair.key;
-                $is-dupe = True;
+        sub find-duplicate (@a) {
+            for ^@pvalue-arrays.elems -> $index {
+                if @pvalue-arrays[$index] eqv @a {
+                    return $index;
+                }
             }
+            return False;
         }
+        my $has_dupe = find-duplicate(@a);
+        if $has_dupe {
+            $alias_c_array_name = "mapping[{$has_dupe − 1}].source";
+            $pvalue-c-hash = $has_dupe;
+            $is-dupe = True;
+        }
+
         @mapping-c-array.push: ('NULL', $alias_c_array_name, $elems)
             unless $is-dupe;
         @pvalue-meta-c-array.push: $pvalue-c-hash;
