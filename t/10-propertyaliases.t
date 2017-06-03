@@ -1,7 +1,9 @@
 use lib 'Unicode-Grant/lib';
 use PropertyAliases;
 use Test;
-my $TODO = <kOtherNumeric General_Category Bidi_Paired_Bracket_Type Numeric_Value kPrimaryNumeric kAccountingNumeric kOtherNumeric>;
+my $TODO = <Jamo_Short_Name kOtherNumeric General_Category
+            Bidi_Paired_Bracket_Type Numeric_Value kPrimaryNumeric
+            kAccountingNumeric kOtherNumeric>;
 is GetPropertyAliasesLookupHash<WSpace>, 'White_Space';
 is GetPropertyAliasesList.elems, 468;
 is GetPropertyAliasesList.keys.sort.unique.elems, GetPropertyAliasesList.keys.elems, "no repeat elements";
