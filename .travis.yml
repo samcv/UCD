@@ -5,7 +5,7 @@ perl6:
 install:
     - rakudobrew build-zef
     - zef update
-    - zef --depsonly install .
+    - zef --force --depsonly install .
 script:
     - git submodule update --init --recursive
     - prove -e perl6
