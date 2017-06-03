@@ -1,16 +1,27 @@
 use UCDlib;
-multi compose-array (
+#| :partition-note option seperates them by line and adds comments so you can tell
+#| what element number each one of the items is
+#|
+#| :map-empty-as allows you to make undefined array items to a certain value.
+#| for example match all undefined items to -1 or 0 for example
+multi compose-array2 (
     Str:D   $type,
     Str:D   $name,
             @body,
     Bool   :$header   = False,
     Str:D  :$delim    = ',',
     Bool:D :$no-split = False,
-    :$partition-note!
+           :$partition-note!,
+           :$map-empty-as
 ) is export {
+    @body .= map({ .defined ?? $_ !! $map-empty-as })
+        if $map-empty-as;
     say "============$name==========";
     my $p-note-nl-delim = S/','/,\n/ given $partition-note;
-    compose-array($type, $name, @body, :$header, :$delim, :$no-split).split($partition-note).map({$_ ~ "/*" ~ $++ ~ "*/" }).join($p-note-nl-delim)
+    compose-array($type, $name, @body, :$header, :$delim, :$no-split)
+        .split($partition-note)
+        .map({$_ ~ "/*" ~ $++ ~ "*/" })
+        .join($p-note-nl-delim)
 }
 multi compose-array (
     Str:D   $type,

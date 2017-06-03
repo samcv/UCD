@@ -62,9 +62,9 @@ int lookup_pvalue (int propcode, char *query) {
         fprintf(stderr, "Can't look up propcode '%i', 0 or below not allowed\n");
         return -1;
     }
-    int offset = -1;
+    int offset  = 0;
     int offset2 = 0;
-    int final = pvalue_meta_c_array[propcode + offset] + offset2;
+    int final   = pvalue_meta_c_array[propcode + offset] + offset2;
     load_pvalue_hash(&mapping[ pvalue_meta_c_array[propcode + offset] + offset2 ]);
     fprintf(stderr, "pvalue_meta_c_array[propcode + %i] = ", offset);
     fprintf(stderr, "pvalue_meta_c_array[%i + %i = %i] = %i \n\t=> mapping[%i + %i] = mapping[%i]\n",

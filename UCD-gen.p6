@@ -100,66 +100,54 @@ sub WritePropertyValueHashes {
     my Int $last = 0;
     my @pvalue-meta-c-array;
     my %pvalue-mapping-to-property;
-    for %pnamecode.sort(*.value.Int) -> $kv {
-        say $kv.perl;
-        my $key = $kv.key // die;
-        if %lh{$key}:!exists {
-            die "$key doesn't exist in hash\n" ~ %lh.perl;
-        }
-        my $values = %lh{$key} // die;
-        my $internal-propcode = $kv.value // die;
-        # In case we are missing some, put some placeholders in there
-        #`{{
-        if $internal-propcode != $last + 1 {
-            warn "MISSING internal propcode: $internal-propcode last: $last";
-            for ^($internal-propcode - $last - 1) {
-                @mapping-c-array.push: ('NULL', 'NULL', 0);
-            }
-        }
-        $last = $internal-propcode;
-        }}
+    sub create-alias-value-array (Positional $values) {
         my @a;
-        my $is-dupe = False;
-        my $alias_c_array_name = %PropertyNameAliases_to{$key};
         for ^$values.elems -> $elem {
             for $values[$elem].list {
                 @a.push: ($_, $elem, $_.codes);
                 @a.push: (normalize($_), $elem, normalize($_).codes);
             }
         }
-        @a = @a.sort.unique(:with(&[eqv]));
+        @a.sort.unique(:with(&[eqv]));
+    }
+    sub find-duplicate (@a) {
+        for ^@pvalue-arrays.elems -> $index {
+            if @pvalue-arrays[$index] eqv @a {
+                return $index;
+            }
+        }
+        return False;
+    }
+    for %pnamecode.sort(*.value.Int) -> $kv {
+        say $kv.perl;
+        my $key = $kv.key // die;
+        if %lh{$key}:!exists {
+            die "$key doesn't exist in hash\n" ~ %lh.perl;
+        }
+        my $values             = %lh{$key} // die;
+        $values ~~ Positional or next;
+        say $values, 'VALUES';
+        my $internal-propcode  = $kv.value // die;
+        my $alias_c_array_name = %PropertyNameAliases_to{$key};
+        my @a = create-alias-value-array($values);
         my $text = '';
         my $pvalue-c-hash = @pvalue-arrays.elems;
         my $elems = @a.elems;
-        sub find-duplicate (@a) {
-            for ^@pvalue-arrays.elems -> $index {
-                if @pvalue-arrays[$index] eqv @a {
-                    return $index;
-                }
-            }
-            return False;
+        my $dupe_array_index = find-duplicate(@a);
+        if $dupe_array_index {
+            $pvalue-c-hash = $dupe_array_index;
         }
-        my $has_dupe = find-duplicate(@a);
-        if $has_dupe {
-            $alias_c_array_name = "mapping[{$has_dupe − 1}].source";
-            $pvalue-c-hash = $has_dupe;
-            $is-dupe = True;
+        else {
+            @mapping-c-array.push: ('NULL', $alias_c_array_name, $elems);
+            @pvalue-arrays.push(@a);
+            @property-value-c-arrays.push: compose-array('MVMUnicodeNamedAlias', $alias_c_array_name // die, @a.sort(*[1].Int) // die);
         }
-
-        @mapping-c-array.push: ('NULL', $alias_c_array_name, $elems)
-            unless $is-dupe;
-        @pvalue-meta-c-array.push: $pvalue-c-hash;
-        @pvalue-arrays.push(@a)
-            unless $is-dupe;
+        @pvalue-meta-c-array[$internal-propcode] = $pvalue-c-hash;
         %pvalue-mapping-to-property{$pvalue-c-hash}.push: %PropertyNameAliases_to{$key};
         @property-value-c-arrays.push: "/* {$internal-propcode} {%PropertyNameAliases_to{$key}} $text */";
-        #@property-value-c-arrays.push: 'int ' ~ %PropertyNameAliases_to{$key} ~ '_elems = ' ~ @a.elems ~ ';';
-        @property-value-c-arrays.push: compose-array('MVMUnicodeNamedAlias', $alias_c_array_name // die, @a.sort(*[1].Int) // die)
-            unless $is-dupe;
-        $internal-propcode++;
     }
     my $pvalue-mapping-property-str =  "\n/*" ~ %pvalue-mapping-to-property.sort(*.key.Int)».perl.join("\n") ~ "\n*/\n";
-    my $pvalue-meta-c-array-str = compose-array('int', 'pvalue_meta_c_array', @pvalue-meta-c-array // die, :partition-note(','));
+    my $pvalue-meta-c-array-str = compose-array2('int', 'pvalue_meta_c_array', @pvalue-meta-c-array // die, :partition-note(','), :map-empty-as(-1));
     my $property-alias = compose-array('MVMUnicodeNamedAlias', 'alias_names', @aliasnames.sort(*[1].Int) );
     @property-value-c-arrays.push: qq:to/END/;
     hash_pre alias_names_hash = \{
