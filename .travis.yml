@@ -8,7 +8,7 @@ install:
     - zef --force --depsonly install .
 script:
     - git submodule update --init --recursive
-    - prove -e perl6
     - perl6 ./UCD-download.p6
+    - prove -e perl6
     - perl6 ./UCD-gen.p6
     - make
