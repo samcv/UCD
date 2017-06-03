@@ -67,28 +67,24 @@ sub WritePropertyValueHashes {
     use lib 'Unicode-Grant/lib';
     use PropertyValueAliases;
     use PropertyAliases;
-    my %lh = GetPropertyValueLookupHash(:!use-short-pnames);
-    my %pa = GetPropertyAliases<long>;
-    my %prop-lookp = GetPropertyAliasesLookupHash;
+    my %GetPropertyValueLookupHash-long = GetPropertyValueLookupHash(:!use-short-pnames);
+    my %GetPropertyAliases-long         = GetPropertyAliases<long>;
+    my %PropertyAliasesLookupHash       = GetPropertyAliasesLookupHash;
     my @aliasnames;
     my $i = 0;
-    my %pnamecode = make-name-alias-hash(%pa);
+    my %pnamecode = make-name-alias-hash(%GetPropertyAliases-long);
     sub normalize (Str:D $name) {
         $name.subst('_', '', :g).lc;
     }
-    sub make-name-alias-hash (%pa) {
-        for %pa.keys.sort(&[unicmp]) -> $key {
-            for %pa{$key}.list -> $pname {
-                my $propcode;
-                if %pnamecode{%prop-lookp{$pname}}:exists {
-                    $propcode = %pnamecode{%prop-lookp{$pname}};
-                }
-                else {
-                    $propcode = ++$i;
-                }
-                @aliasnames.push: (            $pname, $propcode, $pname.codes);
+    sub make-name-alias-hash (%GetPropertyAliases-long) {
+        for %GetPropertyAliases-long.keys.sort(&[unicmp]) -> $key {
+            for %GetPropertyAliases-long{$key}.list -> $pname {
+                my $propcode = %pnamecode{%PropertyAliasesLookupHash{$pname}}:exists
+                    ?? %pnamecode{%PropertyAliasesLookupHash{$pname}}
+                    !! ++$i;
+                @aliasnames.push: (             $pname, $propcode, $pname.codes           );
                 @aliasnames.push: (  normalize($pname), $propcode, normalize($pname).codes);
-                %pnamecode{%prop-lookp{$pname}} = $i;
+                %pnamecode{%PropertyAliasesLookupHash{$pname}} = $i;
             }
         }
         return %pnamecode;
@@ -106,8 +102,9 @@ sub WritePropertyValueHashes {
     my %pvalue-mapping-to-property;
     sub create-alias-value-array (Positional $values) {
         my @a;
-        for ^$values.elems -> $elem {
-            for $values[$elem].list {
+        for $values.pairs {
+            my $elem = .key; my $item = .value;
+            for $item.list {
                 @a.push: ($_, $elem, $_.codes);
                 @a.push: (normalize($_), $elem, normalize($_).codes);
             }
@@ -115,72 +112,61 @@ sub WritePropertyValueHashes {
         @a.sort.unique(:with(&[eqv]));
     }
     sub find-duplicate (@a) {
-        for ^@pvalue-arrays.elems -> $index {
-            if @pvalue-arrays[$index] eqv @a {
-                return $index;
-            }
-        }
-        return False;
+        my $newindex = @pvalue-arrays.first({ $_ eqv @a }, :k);
+        return $newindex.defined ?? $newindex !! False;
     }
+    # Bidi_Mirroring_Brackets => 23  # propname => propcode
     for %pnamecode.sort(*.value.Int) -> $kv {
         say $kv.perl;
         my $key = $kv.key // die;
         # TODO note there's a todo on the line below sourced from lib/Unicode-Grant/lib/PropertyAliases.pm6
-        if %lh{$key}:!exists {
+        if %GetPropertyValueLookupHash-long{$key}:!exists {
             die "$key doesn't exist in hash\n" ~ TODO_P_ALIAS if $key eq TODO_P_ALIAS.any;
             next;
         }
-        my $values             = %lh{$key} // die;
+        my $values             = %GetPropertyValueLookupHash-long{$key} // die;
+        # TODO still needed?
         $values ~~ Positional or next;
-        say $values, 'VALUES';
         my $internal-propcode  = $kv.value // die;
         my $alias_c_array_name = %PropertyNameAliases_to{$key};
         my @a = create-alias-value-array($values);
-        my $text = '';
-        my $pvalue-c-hash = @pvalue-arrays.elems;
         my $elems = @a.elems;
         my $dupe_array_index = find-duplicate(@a);
-        if $dupe_array_index {
-            $pvalue-c-hash = $dupe_array_index;
-        }
-        else {
+        my $pvalue-c-hash = $dupe_array_index ?? $dupe_array_index !! @pvalue-arrays.elems;
+        if !$dupe_array_index {
             @mapping-c-array.push: ('NULL', $alias_c_array_name, $elems);
             @pvalue-arrays.push(@a);
             @property-value-c-arrays.push: compose-array('MVMUnicodeNamedAlias', $alias_c_array_name // die, @a.sort(*[1].Int) // die);
         }
         @pvalue-meta-c-array[$internal-propcode] = $pvalue-c-hash;
         %pvalue-mapping-to-property{$pvalue-c-hash}.push: %PropertyNameAliases_to{$key};
-        @property-value-c-arrays.push: "/* {$internal-propcode} {%PropertyNameAliases_to{$key}} $text */";
+        @property-value-c-arrays.push: "/* {$internal-propcode} {%PropertyNameAliases_to{$key}}  */";
     }
-    my $pvalue-mapping-property-str =  "\n/*" ~ %pvalue-mapping-to-property.sort(*.key.Int)».perl.join("\n") ~ "\n*/\n";
-    my $pvalue-meta-c-array-str = compose-array2('int', 'pvalue_meta_c_array', @pvalue-meta-c-array // die, :partition-note(','), :map-empty-as(-1));
-    my $property-alias = compose-array('MVMUnicodeNamedAlias', 'alias_names', @aliasnames.sort(*[1].Int) );
     @property-value-c-arrays.push: qq:to/END/;
     hash_pre alias_names_hash = \{
         NULL, alias_names, @aliasnames.elems()
     \};
     END
-    @property-value-c-arrays.unshift: $property-alias;
+    @property-value-c-arrays.unshift: compose-array('MVMUnicodeNamedAlias', 'alias_names', @aliasnames.sort(*[1].Int) );
     @property-value-c-arrays.unshift: slurp-snippets('alias', 'header');
-    my $var-end = slurp-snippets('alias', 'main');
-    my $mapping = compose-array('hash_pre', 'mapping', @mapping-c-array, :no-quoting, :no-split).split('},{').map({$_ ~ "/*" ~ $++ ~ "*/" }).join("\},\n\{");
-    @property-value-c-arrays.push: $pvalue-meta-c-array-str;
-    @property-value-c-arrays.push: $mapping;
-    @property-value-c-arrays.push: $pvalue-mapping-property-str;
-    @property-value-c-arrays.push: $var-end;
+    @property-value-c-arrays.append:
+        compose-array2('int', 'pvalue_meta_c_array', @pvalue-meta-c-array // die, :partition-note(','), :map-empty-as(-1)),
+        compose-array('hash_pre', 'mapping', @mapping-c-array, :no-quoting, :no-split).split('},{').map({$_ ~ "/*" ~ $++ ~ "*/" }).join("\},\n\{"),
+        "\n/*" ~ %pvalue-mapping-to-property.sort(*.key.Int)».perl.join("\n") ~ "\n*/\n",
+        slurp-snippets('alias', 'main');
     write-file("property-value-c-array.c", @property-value-c-arrays.join("\n") );
     return %pnamecode;
 }
 sub MAIN (
-Bool:D :$dump = False,
-Bool:D :$nomake = False,
-Int:D  :$less = 0,
-Bool:D :$debug = False,
-Bool:D :$names-only = False,
-Bool:D :$no-UnicodeData = False,
-Bool:D :$no-names = False,
-Bool:D :$pvalue-hashes-only = False,
-Str    :$only?
+    Bool:D :$dump = False,
+    Bool:D :$nomake = False,
+    Int:D  :$less = 0,
+    Bool:D :$debug = False,
+    Bool:D :$names-only = False,
+    Bool:D :$no-UnicodeData = False,
+    Bool:D :$no-names = False,
+    Bool:D :$pvalue-hashes-only = False,
+    Str    :$only?
 ) {
     my @only = $only ?? $only.split( [',', ' '] ) !! Empty;
     $debug-global = $debug;
@@ -284,7 +270,7 @@ class pvalue-seen {
     has %.enum;
     has $!bitwidth;
     method type {
-        $!type = $!negname.WHAT.^name;
+        $!type = $!negname.^name;
         $!type;
     }
     method c-type {
@@ -311,7 +297,7 @@ class pvalue-seen {
     }
     method build {
         if %!enum.elems != %!seen-values.elems {
-            $!type = $!negname.WHAT.^name;
+            $!type = $!negname.^name;
             # Start the enum values at 0
             my $number = 0;
             # Our false name we got should be number 0, and will be different depending
