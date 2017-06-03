@@ -24,12 +24,19 @@ They will be placed in `./source`
 Running `make` will build `bitfield` and `names` and put them in `./build`
 END
 
-my @files = "UCD-gen.p6", "lib/UCDlib.pm6", "lib/bitfield-rows-switch.pm6";
+my @files =
+    "UCD-gen.p6",
+    "lib/UCDlib.pm6",
+    "lib/bitfield-rows-switch.pm6",
+    "Unicode-Grant/lib/PropertyValueAliases.pm6",
+    "Unicode-Grant/lib/PropertyAliases.pm6",
+    "lib/ArrayCompose.pm6"
+    ;
 #say pod2markdown($=pod);
 my $text;
 my @prom = do for @files -> $file {
     start {
-        "\n# $file\n\n" ~ run("perl6",  "--doc=Markdown", $file.IO.absolute, :out).out.slurp
+        "\n# $file\n\n" ~ run("perl6",  "-I", "Unicode-Grant/lib", "-I", "lib", "--doc=Markdown", $file.IO.absolute, :out).out.slurp
     }
 }
 await Promise.allof(@prom);

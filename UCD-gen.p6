@@ -5,6 +5,7 @@ use JSON::Fast;
 use Data::Dump;
 use Terminal::ANSIColor;
 use lib 'lib';
+use Data;
 use UCDlib; use ArrayCompose; use Set-Range;
 use seenwords; use EncodeBase40;
 use BitfieldPacking; use bitfield-rows-switch;
@@ -71,25 +72,28 @@ sub WritePropertyValueHashes {
     my %prop-lookp = GetPropertyAliasesLookupHash;
     my @aliasnames;
     my $i = 0;
-    my %pnamecode;
+    my %pnamecode = make-name-alias-hash(%pa);
     sub normalize (Str:D $name) {
         $name.subst('_', '', :g).lc;
     }
-    for %pa.keys.sort(&[unicmp]) -> $key {
-        for %pa{$key}.list -> $pname {
-            my $propcode;
-            if %pnamecode{%prop-lookp{$pname}}:exists {
-                $propcode = %pnamecode{%prop-lookp{$pname}};
+    sub make-name-alias-hash (%pa) {
+        for %pa.keys.sort(&[unicmp]) -> $key {
+            for %pa{$key}.list -> $pname {
+                my $propcode;
+                if %pnamecode{%prop-lookp{$pname}}:exists {
+                    $propcode = %pnamecode{%prop-lookp{$pname}};
+                }
+                else {
+                    $propcode = ++$i;
+                }
+                @aliasnames.push: (            $pname, $propcode, $pname.codes);
+                @aliasnames.push: (  normalize($pname), $propcode, normalize($pname).codes);
+                %pnamecode{%prop-lookp{$pname}} = $i;
             }
-            else {
-                $propcode = ++$i;
-            }
-            @aliasnames.push: (            $pname, $propcode, $pname.codes);
-            @aliasnames.push: (  normalize($pname), $propcode, normalize($pname).codes);
-
-            %pnamecode{%prop-lookp{$pname}} = $i;
         }
+        return %pnamecode;
     }
+
     @aliasnames = @aliasnames.sort({$^a[0] unicmp $^b[0]}).unique(:with(&[eqv]));
     my @property-value-c-arrays;
     my @mapping-c-array;
@@ -121,8 +125,10 @@ sub WritePropertyValueHashes {
     for %pnamecode.sort(*.value.Int) -> $kv {
         say $kv.perl;
         my $key = $kv.key // die;
+        # TODO note there's a todo on the line below sourced from lib/Unicode-Grant/lib/PropertyAliases.pm6
         if %lh{$key}:!exists {
-            die "$key doesn't exist in hash\n" ~ %lh.perl;
+            die "$key doesn't exist in hash\n" ~ TODO_P_ALIAS if $key eq TODO_P_ALIAS.any;
+            next;
         }
         my $values             = %lh{$key} // die;
         $values ~~ Positional or next;
@@ -154,7 +160,6 @@ sub WritePropertyValueHashes {
         NULL, alias_names, @aliasnames.elems()
     \};
     END
-    #"\nint alias_names_elems = " ~ @aliasnames.elems ~ ';';
     @property-value-c-arrays.unshift: $property-alias;
     @property-value-c-arrays.unshift: slurp-snippets('alias', 'header');
     my $var-end = slurp-snippets('alias', 'main');
@@ -192,6 +197,7 @@ Str    :$only?
     die Dump %points unless %points{0}:exists;
     timer('UnicodeData');
     my str @sorted-cp;
+    # TODO have it source the null value values from a different place
     unless $names-only {
         constant @enum-data =
             (1, 'East_Asian_Width',       'N',                'extracted/DerivedEastAsianWidth'),
@@ -979,6 +985,7 @@ sub make-bitfield-rows ( @sorted-cp ) {
         if %enumerated-properties{$property}:exists {
             $bitwidth = %enumerated-properties{$property}.bitwidth;
             my $this-prop := nqp::hash;
+            # Pvalue codes get created HERE XXX (.build)
             my $built = %enumerated-properties{$property}.build;
             for $built.kv -> $key, $value {
                 my $type = $value.^name;

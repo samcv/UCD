@@ -1,9 +1,8 @@
 use lib 'Unicode-Grant/lib';
 use PropertyAliases;
+use lib 'lib';
+use Data;
 use Test;
-my $TODO = <Jamo_Short_Name kOtherNumeric General_Category
-            Bidi_Paired_Bracket_Type Numeric_Value kPrimaryNumeric
-            kAccountingNumeric kOtherNumeric>;
 is GetPropertyAliasesLookupHash<WSpace>, 'White_Space';
 is GetPropertyAliasesList.elems, 468;
 is GetPropertyAliasesList.keys.sort.unique.elems, GetPropertyAliasesList.keys.elems, "no repeat elements";
@@ -21,13 +20,15 @@ my %hash = GetPropertyValueLookupHash(:!use-short-pnames);
 for %hash.keys {
     my $query =  %hash{$_}[0][0];
     next if $query.starts-with('<');
-    todo("todo $_", 1), if $_ eq $TODO.any;
+    todo("todo $_", 1), if $_ eq TODO_P_ALIAS.any;
     my $cmd = run './build/property-value-c-array', $_, $query, :out, :err;
     #"Prop $_ Query $query".say;
     my @lines = $cmd.out.slurp.lines;
     is @lines.elems, 2, "Prop $_ Query $query";
 }
+is %hash<General_Category>.elems, 38;
 done-testing;
+say GetPropertyValueLookupHash :missing;
 exit;
 {
     #plan 1;

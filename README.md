@@ -1,6 +1,9 @@
 * [UCD-gen.p6](#ucdgenp6)
 * [lib/UCDlib.pm6](#libucdlibpm6)
 * [lib/bitfield-rows-switch.pm6](#libbitfieldrowsswitchpm6)
+* [Unicode-Grant/lib/PropertyValueAliases.pm6](#unicodegrantlibpropertyvaluealiasespm6)
+* [Unicode-Grant/lib/PropertyAliases.pm6](#unicodegrantlibpropertyaliasespm6)
+* [lib/ArrayCompose.pm6](#libarraycomposepm6)
 
 [![Build Status](https://travis-ci.org/samcv/UCD.svg?branch=master)](https://travis-ci.org/samcv/UCD)
 
@@ -98,3 +101,68 @@ sub get-points-ranges-array(
 ```
 
 Returns a multi-dim Array. We push onto each index all of the contiguous codepoints which have the same bitfield row. We also fill in any gaps and add those to their own range number.
+ 
+# Unicode-Grant/lib/PropertyValueAliases.pm6
+
+### sub GetPropertyValueLookupHash
+
+```perl6
+sub GetPropertyValueLookupHash(
+    Str:D $filename = "UNIDATA/PropertyValueAliases.txt", 
+    Bool:D :$use-short-pnames = Bool::True, 
+    Bool:D :$missing = Bool::False
+) returns Mu
+```
+
+Returns a hash whose keys are PropertyValues and whose values are list's of list's. AHex => [[N No F False] [Y Yes T True]], The first value in the array is the shortened property value, and the second one is the long form one. The ones after that point are additional aliases Note. Does not return a positional for integer properties, instead returns a string which contains the Unicode datafile reason/null value for that property
+ 
+# Unicode-Grant/lib/PropertyAliases.pm6
+
+### sub GetPropertyAliasesRevLookupHash
+
+```perl6
+sub GetPropertyAliasesRevLookupHash(
+    Str $filename = "UNIDATA/PropertyAliases.txt"
+) returns Mu
+```
+
+Returns a hash whose keys are PropertyAliases and whose values are the short name which is usable with GetPropertyValueLookupHash to look up different value aliases
+
+### sub GetPropertyAliasesLookupHash
+
+```perl6
+sub GetPropertyAliasesLookupHash(
+    Str $filename = "UNIDATA/PropertyAliases.txt"
+) returns Mu
+```
+
+Returns a hash whose keys are PropertyAliases and whose values are the full names
+
+### sub GetPropertyAliases
+
+```perl6
+sub GetPropertyAliases(
+    Str $filename = "UNIDATA/PropertyAliases.txt"
+) returns Mu
+```
+
+Returns a hash whose values arrays of all the property names which are equivalent
+ 
+# lib/ArrayCompose.pm6
+
+### sub compose-array2
+
+```perl6
+sub compose-array2(
+    Str:D $type, 
+    Str:D $name, 
+    @body, 
+    Bool :$header = Bool::False, 
+    Str:D :$delim = ",", 
+    Bool:D :$no-split = Bool::False, 
+    :$partition-note!, 
+    :$map-empty-as
+) returns Mu
+```
+
+:partition-note option seperates them by line and adds comments so you can tell what element number each one of the items is :map-empty-as allows you to make undefined array items to a certain value. for example match all undefined items to -1 or 0 for example
