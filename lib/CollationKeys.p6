@@ -36,13 +36,13 @@ class Collation-Gram::Action {
         make %(
             array => @!array,
             comment => ~$<comment>,
-            dot-star => ~$!dot-star,
-            codepoints => @!codepoints
+            codepoints => @!codepoints.chrs.ords
         )
     }
     method coll-key ($/) {
-        $!dot-star.push: $<dot-star>;
-        @!array.push: ($<primary>, $<secondary>, $<tertiary>).map(*.Str.parse-base(16));
+        my $a = ($<primary>, $<secondary>, $<tertiary>).map(*.Str.parse-base(16)).Array;
+        $a.push: ($<dot-star> eq '.' ?? 0 !! $<dot-star> eq '*' ?? 1 !! do { die $<dot-star> });
+        @!array.push: $a;
 
     }
     method codepoints ($/) {
@@ -56,44 +56,142 @@ my %trie;
 my @all;
 my $i = 0;
 my $max-coll-keys = 0;
-sub add-to-trie (@list, %trie) {
-    if !@list.elems {
+sub add-to-trie (@list, %trie, $data) {
+    if !@list {
         return;
     }
     my Int $cp = @list.shift;
     if %trie{$cp}:exists {
-        add-to-trie @list, %trie{$cp};
+        if !@list {
+            if %trie{$cp} eqv $data {
+                say "nexting";
+                next;
+            }
+            die;
+        }
+        add-to-trie @list, %trie{$cp}, $data;
     }
     else {
-        %trie{$cp} = Hash.new;
-        add-to-trie @list, %trie{$cp};
+        if !@list {
+            %trie{$cp} = $data;
+        }
+        else {
+            %trie{$cp} = Hash.new;
+            add-to-trie @list, %trie{$cp}, $data;
+        }
     }
 }
-
+note 'processing data';
 for "UNIDATA/UCA/allkeys.txt".IO.lines -> $line {
     next if $line.starts-with('#') or !$line;
     # TODO add implict weights
     next if $line.starts-with('@');
     my $var = Collation-Gram.new.parse($line, :actions(Collation-Gram::Action.new)).made;
     @all.push: $var;
-    if $var<codepoints>.elems > 1 {
+    if $var<codepoints>.elems > 2 {
         %list{$var<codepoints>[0]}<count>++;
         %list{$var<codepoints>[0]}<data>.push: $var;
-        add-to-trie($var<codepoints>.Array, %trie);
+        add-to-trie($var<codepoints>.Array, %trie, $var);
+    }
+    if $var<codepoints>.elems > 2 {
+        say "more than 2 codepoints in a row: $var";
     }
     #last if $i > 1000;
     $i++;
 }
-use Data::Dump;
-my $output = Dump %trie;
-spurt "temp.txt", $output;
-#my %hash;
+note 'done processing';
+my @collation-keys-array;
+my @sub_nodes;
+my @main_nodes;
+my @seen = 0,0;
+sub add-sub_node (Int:D $cp, Int:D $min, Int:D $max, Int:D $sub_node_elems, Positional:D $collation-keys) {
+    my $link = @collation-keys-array.elems;
+    my @a = $cp, $min, $max, $sub_node_elems, $collation-keys.elems, $link;
+    @sub_nodes.push: @a;
+    die unless $collation-keys.elems;
+    my Str:D @keys-to-add = $collation-keys.map({'{' ~ .join(',') ~ '}'});
+    @collation-keys-array.append: @keys-to-add;
+}
+sub make-sub_node ($cp, $node) {
+    #dump-node-info;
+    sub dump-node-info (Str:D $description = '')  {
+        note "$description cp: $cp keys: $node.keys()\nvalue: $node.gist()";
+    }
+    #say $node.keys;
+    # check if we have any further subnodes
+    if $node.keys.any ~~ /^<:Numeric>+$/  {
+        say "Numeric match";
+        my @sub-cp's = $node.keys;
+        say "sub-cps: ", @sub-cp's.join(' ');
+        my $min = @sub-cp's.min;
+        my $max = @sub-cp's.max;
+        for @sub-cp's -> $cp {
+            say "cp $cp node\{cp\} ", $node{$cp};
+            #say "cp $cp whole node $node.gist()";
+            #exit;
+            make-sub_node($cp.Int, $node{$cp});
+            CATCH { dump-node-info "FAILURE" }
+        }
+        #dump-node-info "HAS SUBNODE";
+    }
+    # If there's no extra subnodes
+    else {
+        say "going normal";
+        dump-node-info "NORMAL";
+        my $min = -1;
+        my $max = -1;
+        my $sub_node_elems = 0;
+        my $collation_key_elems = $node<array>.elems;
+        my $link = @collation-keys-array.elems;
+        add-sub_node($cp.Int, $min, $max, $sub_node_elems, $node<array>);
+    }
+    # node.keys
+    # codepoints, arrary, comment, 3285, 3288
+    # holds the current node and also further nodes
+
+}
+# Receives pairs where the key is the main node's codepoint and the value is a hash containing
+# the subnodes
+sub make-main_node (*@pairs) {
+    for @pairs -> $pair {
+        my $node  = $pair.value;
+        my $cp    = $pair.key;
+        my $max   = $node.keys.max;
+        my $min   = $node.keys.min;
+        my $elems = $node.keys.elems;
+        my $main-node-c-struct = '{' ~ ($cp, $min, $max, $elems, @sub_nodes.elems).join(',') ~ '}';
+        @main_nodes.push: $main-node-c-struct;
+        for $node.kv -> $cp, $node {
+            make-sub_node $cp, $node;
+        }
+    }
+    #say 'main-node-struct: ', $main-node-c-struct;
+    #say 'sub-nodes: ', @sub_nodes.perl;
+    return 'main-node-strict' => @main_nodes,
+        'sub-nodes' => @sub_nodes,
+        'collation-keys' => @collation-keys-array
+}
+sub compose-the-arrays {
+    my %nody = make-main_node #`(%trie.pairs) 119128 => %trie{119128};
+    say compose-array 'main_node', 'main_nodes', @main_nodes;
+    say compose-array 'sub_node', 'sub_nodes', @sub_nodes;
+    say compose-array 'collation_key', 'special_collation_keys', @collation-keys-array;
+    use lib 'lib';
+    use ArrayCompose;
+    #say 'collation-keys: ', @collation-keys-array.perl;
+    exit;
+    #spurt "temp.txt", $output;
+    #my %hash;
+}
+compose-the-arrays;
 my @output;
 my $keys = %list.keys;
 #my $values = %hash.values;
 @output.push: "Max number of cp's: {@all»<codepoints>».elems.max}";
 @output.push: "Number of different special first cps: {$keys.elems}";
 @output.push: "Number of different total collation thingys: {@all.elems}";
+my @biggest = @all»<array>»[0].max, @all»<array>»[1].max, @all»<array>»[2].max;
+@output.push: "Biggest primary: @biggest[0] Biggest secondary: @biggest[1] Biggest tertiary: {@biggest[2]}";
 @output.push: "Longest number of collation keys {@all»<array>».elems.max} min: {@all»<array>».elems.min}";
 @output.push: "Special starters:";
 for %list.sort(*.key) {
