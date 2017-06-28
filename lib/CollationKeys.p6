@@ -108,10 +108,13 @@ sub add-sub_node (
     Int:D :$cp!, Int:D :$min!, Int:D :$max!,
     Int:D :$sub_node_elems!, Positional :$collation-keys
 ) {
-    my Int:D $link = @collation-keys-array.elems;
-    my Int:D $collation_key_elems = $collation-keys ?? $collation-keys.elems !! -1;
+    my Int:D $link = $collation-keys
+                     ?? @collation-keys-array.elems !! @sub_nodes.elems + 1;
+    my Int:D $collation_key_elems = $collation-keys
+                                    ?? $collation-keys.elems !! -1;
     my Int:D @a = $cp, $min, $max, $sub_node_elems, $collation_key_elems, $link;
-    die "collation_key_elems $collation_key_elems == link $link" if $collation_key_elems == $link;
+    die "collation_key_elems $collation_key_elems == sub_node_elems $sub_node_elems\ncollkeys: $collation-keys.gist()"
+        if $collation_key_elems == $sub_node_elems;
     @sub_nodes.push: @a;
     if $collation_key_elems != -1 {
         die unless $collation-keys.elems;
@@ -137,7 +140,7 @@ sub make-sub_node (:$cp!, :$node!) {
         my Int:D $collation_key_elems = -1;
         # Add the subnode
         add-sub_node(:cp($cp.Int), :$min, :$max, :$sub_node_elems);
-        for @sub-cp's -> $cp {
+        for @sub-cp's.sort -> $cp {
             say "cp $cp node\{cp\} ", $node{$cp};
             #say "cp $cp whole node $node.gist()";
             #exit;
@@ -184,7 +187,11 @@ sub make-main_node (*@pairs) {
         'collation-keys' => @collation-keys-array
 }
 sub compose-the-arrays {
-    my %nody = make-main_node #`(%trie.pairs) 119128 => %trie{119128};
+    my @list-of-cp's-to-make-nodes-for;
+    #for %trie.keys.pick(10) -> $random-pick-cp {
+    #    @list-of-cp's-to-make-nodes-for.push: ($random-pick-cp => %trie{$random-pick-cp});
+    #}
+    my %nody = make-main_node (%trie.pairs) #`(4018 => %trie{4018});#, |@list-of-cp's-to-make-nodes-for;
     say "#define main_nodes_elems @main_nodes.elems()";
     say compose-array 'sub_node', 'main_nodes', @main_nodes;
     say "#define sub_nodes_elems @sub_nodes.elems()";
