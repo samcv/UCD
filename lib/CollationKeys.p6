@@ -104,15 +104,22 @@ my @collation-keys-array;
 my @sub_nodes;
 my @main_nodes;
 my @seen = 0,0;
-sub add-sub_node (Int:D $cp, Int:D $min, Int:D $max, Int:D $sub_node_elems, Positional:D $collation-keys) {
-    my $link = @collation-keys-array.elems;
-    my @a = $cp, $min, $max, $sub_node_elems, $collation-keys.elems, $link;
+sub add-sub_node (
+    Int:D :$cp!, Int:D :$min!, Int:D :$max!,
+    Int:D :$sub_node_elems!, Positional :$collation-keys
+) {
+    my Int:D $link = @collation-keys-array.elems;
+    my Int:D $collation_key_elems = $collation-keys ?? $collation-keys.elems !! -1;
+    my Int:D @a = $cp, $min, $max, $sub_node_elems, $collation_key_elems, $link;
+    die "collation_key_elems $collation_key_elems == link $link" if $collation_key_elems == $link;
     @sub_nodes.push: @a;
-    die unless $collation-keys.elems;
-    my Str:D @keys-to-add = $collation-keys.map({'{' ~ .join(',') ~ '}'});
-    @collation-keys-array.append: @keys-to-add;
+    if $collation_key_elems != -1 {
+        die unless $collation-keys.elems;
+        my Str:D @keys-to-add = $collation-keys.map({'{' ~ .join(',') ~ '}'});
+        @collation-keys-array.append: @keys-to-add;
+    }
 }
-sub make-sub_node ($cp, $node) {
+sub make-sub_node (:$cp!, :$node!) {
     #dump-node-info;
     sub dump-node-info (Str:D $description = '')  {
         note "$description cp: $cp keys: $node.keys()\nvalue: $node.gist()";
@@ -121,30 +128,33 @@ sub make-sub_node ($cp, $node) {
     # check if we have any further subnodes
     if $node.keys.any ~~ /^<:Numeric>+$/  {
         say "Numeric match";
-        my @sub-cp's = $node.keys;
+        die $node.keys unless $node.keys.all ~~ /^<:Numeric>+$/;
+        my @sub-cp's = $node.keys».Int;
         say "sub-cps: ", @sub-cp's.join(' ');
-        my $min = @sub-cp's.min;
-        my $max = @sub-cp's.max;
+        my Int:D $min = @sub-cp's.min;
+        my Int:D $max = @sub-cp's.max;
+        my Int:D $sub_node_elems = @sub-cp's.elems;
+        my Int:D $collation_key_elems = -1;
+        # Add the subnode
+        add-sub_node(:cp($cp.Int), :$min, :$max, :$sub_node_elems);
         for @sub-cp's -> $cp {
             say "cp $cp node\{cp\} ", $node{$cp};
             #say "cp $cp whole node $node.gist()";
             #exit;
-            make-sub_node($cp.Int, $node{$cp});
+            # Add the nodes below that node
+            make-sub_node :cp($cp.Int), :node($node{$cp});
             CATCH { dump-node-info "FAILURE" }
         }
         #dump-node-info "HAS SUBNODE";
+        return;
     }
     # If there's no extra subnodes
-    else {
-        say "going normal";
-        dump-node-info "NORMAL";
-        my $min = -1;
-        my $max = -1;
-        my $sub_node_elems = 0;
-        my $collation_key_elems = $node<array>.elems;
-        my $link = @collation-keys-array.elems;
-        add-sub_node($cp.Int, $min, $max, $sub_node_elems, $node<array>);
-    }
+    say "going normal";
+    dump-node-info "NORMAL";
+    my $min = -1;
+    my $max = -1;
+    my $sub_node_elems = 0;
+    add-sub_node :cp($cp.Int), :$min, :$max, :$sub_node_elems, :collation-keys($node<array>);
     # node.keys
     # codepoints, arrary, comment, 3285, 3288
     # holds the current node and also further nodes
@@ -159,10 +169,12 @@ sub make-main_node (*@pairs) {
         my $max   = $node.keys.max;
         my $min   = $node.keys.min;
         my $elems = $node.keys.elems;
-        my $main-node-c-struct = '{' ~ ($cp, $min, $max, $elems, @sub_nodes.elems).join(',') ~ '}';
+        my $collation_key_elems = 0;
+        my $main-node-c-struct = '{' ~ ($cp, $min, $max, $elems, $collation_key_elems, @sub_nodes.elems).join(',') ~ '}';
         @main_nodes.push: $main-node-c-struct;
-        for $node.kv -> $cp, $node {
-            make-sub_node $cp, $node;
+        for $node.sort(*.key.Int) -> $pair {
+            my ($cp, $node) = ($pair.key, $pair.value);
+            make-sub_node :$cp, :$node;
         }
     }
     #say 'main-node-struct: ', $main-node-c-struct;
@@ -173,8 +185,11 @@ sub make-main_node (*@pairs) {
 }
 sub compose-the-arrays {
     my %nody = make-main_node #`(%trie.pairs) 119128 => %trie{119128};
-    say compose-array 'main_node', 'main_nodes', @main_nodes;
+    say "#define main_nodes_elems @main_nodes.elems()";
+    say compose-array 'sub_node', 'main_nodes', @main_nodes;
+    say "#define sub_nodes_elems @sub_nodes.elems()";
     say compose-array 'sub_node', 'sub_nodes', @sub_nodes;
+    say "#define special_collation_keys_elems @collation-keys-array.elems()";
     say compose-array 'collation_key', 'special_collation_keys', @collation-keys-array;
     use lib 'lib';
     use ArrayCompose;
