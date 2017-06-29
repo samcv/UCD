@@ -24,8 +24,6 @@ grammar Collation-Gram {
     token primary { <:AHex>+ }
     token secondary { <:AHex>+ }
     token tertiary { <:AHex>+ }
-
-
 }
 class Collation-Gram::Action {
     has @!array;
@@ -43,13 +41,10 @@ class Collation-Gram::Action {
         my $a = ($<primary>, $<secondary>, $<tertiary>).map(*.Str.parse-base(16)).Array;
         $a.push: ($<dot-star> eq '.' ?? 0 !! $<dot-star> eq '*' ?? 1 !! do { die $<dot-star> });
         @!array.push: $a;
-
     }
     method codepoints ($/) {
         @!codepoints.append: $<codepoint>.map(*.Str.parse-base(16));
-
     }
-
 }
 my %list{Int};
 my %trie;
@@ -57,10 +52,8 @@ my @all;
 my $i = 0;
 my $max-coll-keys = 0;
 sub add-to-trie (@list, %trie, $data) {
-    if !@list {
-        return;
-    }
-    my Int $cp = @list.shift;
+    return if !@list;
+    my Int:D $cp = @list.shift;
     if %trie{$cp}:exists {
         if !@list {
             if %trie{$cp} eqv $data {
@@ -109,7 +102,6 @@ for "UNIDATA/UCA/allkeys.txt".IO.lines -> $line {
     if 1 < $var<codepoints>.elems {
         %list{$var<codepoints>[0]}<count>++;
         %list{$var<codepoints>[0]}<data>.push: $var;
-        #say "adding to trie: $var.gist";
         add-to-trie($var<codepoints>.Array, %trie, $var);
     }
     if $var<codepoints>.elems > 2 {
@@ -123,98 +115,80 @@ my @collation-keys-array;
 my @sub_nodes;
 my @main_nodes;
 sub add-sub_node (
-    Int:D :$cp!,
+    Int:D  $node's-cp!,
     Int:D :$min!,
     Int:D :$max!,
     Int:D :$sub_node_elems!,
     Positional :$subnode_collation_keys
 ) {
+    my Int:D $before-collation-array-elems = @collation-keys-array.elems;
     my Int:D $collation_link      = $subnode_collation_keys ?? @collation-keys-array.elems   !! -1;
     my Int:D $collation_key_elems = $subnode_collation_keys ?? $subnode_collation_keys.elems !! -1;
 
     my Int:D $subnode_link        = $sub_node_elems ?? @sub_nodes.elems + 1 !! -1;
 
-    my Int:D @a = $cp, $min, $max, $sub_node_elems, $subnode_link, $collation_key_elems, $collation_link;
+    my Int:D @a = $node's-cp, $min, $max, $sub_node_elems, $subnode_link, $collation_key_elems, $collation_link;
     say 'subnode: ', @a.perl;
-
-    die "collation_key_elems $collation_key_elems == sub_node_elems $sub_node_elems\ncollkeys: $subnode_collation_keys.gist()"
-        if $collation_key_elems == $sub_node_elems;
     @sub_nodes.push: @a;
     if $collation_key_elems != -1 {
         die "No collation keys found?" unless $subnode_collation_keys.elems;
         my Str:D @keys-to-add = $subnode_collation_keys.map({'{' ~ .join(',') ~ '}'});
+        say 'coll-keys: ', @keys-to-add.perl;
         @collation-keys-array.append: @keys-to-add;
+        my Int:D $after-collation-array-elems = @collation-keys-array.elems;
+        say "Collation-array-elems: Before $before-collation-array-elems After $after-collation-array-elems";
     }
 }
+my %hash-done;
+my @c-cp-array;
 multi sub make-sub_node (Cool:D(Int) $cp!, Pair:D $node!) {
-    sub dump-node-info (Str:D $description = '')  {
-        note "$description Pair node: cp: $cp key: {$node.key.gist}\nvalue: {$node.value.gist}";
-    }
-    dump-node-info;
-    my %hash = $node.key => $node.value;
-    make-sub_node $cp, %hash;
+    die;
 }
-multi sub make-sub_node (Cool:D(Int) $cp!, Hash:D $node!) {
+multi sub make-sub_node (Cool:D(Int) $prev-cp!, Hash:D $node!) {
     #dump-node-info;
-    sub dump-node-info (Str:D $description = '')  {
-        note "$description Hash node: cp: $cp keys: {$node.keys.gist}\nvalues: {$node.values.gist}";
+    if $node<array>:exists {
+        my $joined = $node<codepoints>.join(',');
+        if %hash-done{$joined}:exists {
+            say "    i've processed this one before!!!";
+            return;
+        }
+        @c-cp-array.push: Pair.new($node<codepoints>, $node<array>);
+        %hash-done{$node<codepoints>.join(',')} =  True;
     }
-    dump-node-info;
-    say 'WHAT: ', $node.WHAT;
-    say "node.keys: ", $node.keys;
+    sub dump-node-info (Str:D $description = '')  {
+        note "{$description}Hash node: prev-cp: $prev-cp keys elems {$node.keys.elems} keys: {$node.keys.gist}\nvalues elems {$node.values.elems} values: {$node.values.gist}";
+    }
+    note "";
+    dump-node-info "   ";
+    note "";
+
+    say '    WHAT: ', $node.WHAT;
+    say "    node.keys: ", $node.keys;
     my @numeric = only-numeric($node.keys);
     my @non-numeric = not-numeric($node.keys);
 
-    say "NON NUMERIC: {@non-numeric.perl}" if @non-numeric;
-    say "NUMERIC: {@numeric.perl}" if @numeric;
-    # say $node.keys;
-    # check if we have any further subnodes
-    #if @numeric and @non-numeric {
-    #}node
-    #if @numeric {
-        #die "There's a mix of numeric and non-numeric nodes. Script hasn't been "
-         # ~ "tested for this condition.\n\$node.keys: $node.keys"
-        #    unless $node.keys.all ~~ /^<:Numeric>+$/;
-        my Int:D $min = @numeric ?? @numeric.min !! -1;
-        my Int:D $max = @numeric ?? @numeric.max !! -1;
-        my Int:D $sub_node_elems = @numeric.elems;
-        # Add the subnode
-        $node<array>:exists
-            ?? add-sub_node(:$cp, :$min, :$max, :$sub_node_elems, :subnode_collation_keys($node<array>))
-            !! add-sub_node(:$cp, :$min, :$max, :$sub_node_elems);
-        for @numeric.sort -> $cp {
-            say "cp $cp node\{cp\} ", $node{$cp};
-            #say "cp $cp whole node $node.gist()";
-            #exit;
+    say "    NON NUMERIC: {@non-numeric.perl}" if @non-numeric;
+    say "    NUMERIC: {@numeric.perl}" if @numeric;
+    my Int:D $min = @numeric ?? @numeric.min !! -1;
+    my Int:D $max = @numeric ?? @numeric.max !! -1;
+    my Int:D $sub_node_elems = @numeric.elems;
+    # Add the subnode
+    $node<array>:exists
+        ?? add-sub_node($prev-cp, :$min, :$max, :$sub_node_elems, :subnode_collation_keys($node<array>))
+        !! add-sub_node($prev-cp, :$min, :$max, :$sub_node_elems);
+    if @numeric {
+        say "     Entering \@numeric loop";
+        for @numeric.sort -> $node's-cp {
+            say "      in \@numeric loop: running ->make-sub_node cp\[$node's-cp\] node\[", $node{$node's-cp}, "\]";
             # Add the nodes below that node
-            make-sub_node $cp, $node{$cp};
+            make-sub_node $node's-cp, $node{$node's-cp};
             CATCH { dump-node-info "FAILURE" }
         }
-        #dump-node-info "HAS SUBNODE";
-    #}
-    if 0 and @non-numeric {
-        die;
-        # If there's no extra subnodes
-        say "going normal";
-        dump-node-info "NORMAL";
-        my $min = -1;
-        my $max = -1;
-        my $sub_node_elems = 0;
-        my $subnode_collation_keys = $node<array>;
-        add-sub_node :cp($cp.Int), :$min, :$max, :$sub_node_elems, :subnode_collation_keys($node<array>);
-        CATCH { dump-node-info }
     }
-    # node.keys
-    # codepoints, arrary, comment, 3285, 3288
-    # holds the current node and also further nodes
-
 }
 sub only-numeric ($list) {
-    say "trying to turn {$list.perl} into an array";
     my @list = $list.grep(/^<:Numeric>+$/);
-    say @list.perl;
     @list = @list».Int;
-    say @list.perl;
     @list;
 }
 sub not-numeric ($list) {
@@ -223,10 +197,11 @@ sub not-numeric ($list) {
 # Receives pairs where the key is the main node's codepoint and the value is a hash containing
 # the subnodes
 sub make-main_node (*@pairs) {
+    say "============ Starting make-main_node =============\n\n";
     for @pairs -> $pair {
-        say 'pair: ', $pair.perl;
-        say 'value: ', $pair.value;
-        say 'key: ', $pair.key;
+        say ' pair: ', $pair.perl;
+        say ' value: ', $pair.value;
+        say ' key: ', $pair.key;
         my Hash:D $node  = $pair.value;
         my Int:D $cp    = $pair.key.Int;
         my Int:D @numeric-keys = only-numeric($node.keys);
@@ -239,25 +214,19 @@ sub make-main_node (*@pairs) {
         my $main-node-c-struct = '{' ~ ($cp, $min, $max, $sub_node_elems, @sub_nodes.elems, $collation_key_elems, $collation_key_elems).join(',') ~ '}';
         @main_nodes.push: $main-node-c-struct;
         for @numeric-keys.sort -> $key {
-            say 'key: ', $key;
-            say 'node: ', $node;
-            say 'node{key}: ', $node{$key};
             my Int:D $cp = $key;
-            make-sub_node $cp, $node;
+            say '  in make-main_node loop. cp: ', $cp, ' node: ', $node, ' node{key}: ', $node{$key};
+            say "  Running make-sub_node from make-main_node loop";
+            make-sub_node $cp, $node{$cp};
         }
     }
-    #say 'main-node-struct: ', $main-node-c-struct;
-    #say 'sub-nodes: ', @sub_nodes.perl;
     return 'main-node-strict' => @main_nodes,
         'sub-nodes' => @sub_nodes,
         'collation-keys' => @collation-keys-array
 }
 sub compose-the-arrays {
     my @list-of-cp's-to-make-nodes-for;
-    #for %trie.keys.pick(10) -> $random-pick-cp {
-    #    @list-of-cp's-to-make-nodes-for.push: ($random-pick-cp => %trie{$random-pick-cp});
-    #}
-    my %nody = make-main_node #`(%trie.pairs) (4018 => %trie{4018});#, |@list-of-cp's-to-make-nodes-for;
+    my %nody = make-main_node (%trie.pairs) #`(119226 => %trie{119226});#, |@list-of-cp's-to-make-nodes-for;
     say "#define main_nodes_elems @main_nodes.elems()";
     say compose-array 'sub_node', 'main_nodes', @main_nodes;
     say "#define sub_nodes_elems @sub_nodes.elems()";
@@ -266,10 +235,10 @@ sub compose-the-arrays {
     say compose-array 'collation_key', 'special_collation_keys', @collation-keys-array;
     use lib 'lib';
     use ArrayCompose;
-    #say 'collation-keys: ', @collation-keys-array.perl;
+    for ^@c-cp-array -> $index {
+        say '{' ~ @c-cp-array[$index].key.join(',') ~ '}' ~ '  ' ~ @c-cp-array[$index].value.join('.');
+    }
     exit;
-    #spurt "temp.txt", $output;
-    #my %hash;
 }
 compose-the-arrays;
 my @output;
