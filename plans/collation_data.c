@@ -769,13 +769,13 @@ int get_first_subnode_elem (sub_node my_main_node, int *cp, int start_cp_array_e
             cp[start_cp_array_elem], my_main_node.min,  my_main_node.max);
         return -1;
     }
-    printf("min %i max %i elems %i cp[start_cp_array_elem] %i\n", my_main_node.min, my_main_node.max, my_main_node.sub_node_elems, cp[start_cp_array_elem]);
-    printf("cp[start_cp_array_elem]-min = %i max - min = %i. (%i)/( %i/(%i) )\n", cp[start_cp_array_elem] - my_main_node.min, my_main_node.max - my_main_node.min,
+    fprintf(stderr, "min %i max %i elems %i cp[start_cp_array_elem] %i\n", my_main_node.min, my_main_node.max, my_main_node.sub_node_elems, cp[start_cp_array_elem]);
+    fprintf(stderr, "cp[start_cp_array_elem]-min = %i max - min = %i. (%i)/( %i/(%i) )\n", cp[start_cp_array_elem] - my_main_node.min, my_main_node.max - my_main_node.min,
                                         cp[start_cp_array_elem]-my_main_node.min, my_main_node.sub_node_elems, my_main_node.max - my_main_node.min);
     result = (cp[start_cp_array_elem]-my_main_node.min)/( my_main_node.sub_node_elems/(my_main_node.max - my_main_node.min) );
-    printf("The guessed element for for codepoint %i\n", sub_nodes[result].codepoint);
+    fprintf(stderr, "The guessed element for for codepoint %i\n", sub_nodes[result].codepoint);
     if (sub_nodes[result].codepoint == cp[start_cp_array_elem]) {
-        printf("result %i  ", result);
+        fprintf(stderr, "result %i  ", result);
         print_sub_node(sub_nodes[result]);
         return get_first_subnode_elem(sub_nodes[result], cp, start_cp_array_elem+1, cp_array_length, result);;
     }
@@ -784,7 +784,7 @@ int get_first_subnode_elem (sub_node my_main_node, int *cp, int start_cp_array_e
         int i;
         printf("The current cp %i is more than %i located at node index %i\n", cp[start_cp_array_elem], sub_nodes[result].codepoint, result);
         for (i = result + 1 ; i < my_main_node.sub_node_link + my_main_node.sub_node_elems; i++) {
-            printf("Trying node index %i\n", i);
+            fprintf(stderr, "Trying node index %i\n", i);
             if (sub_nodes[i].codepoint == cp[start_cp_array_elem]) {
                 result = i;
                 return get_first_subnode_elem(sub_nodes[result], cp, start_cp_array_elem+1, cp_array_length, result);
@@ -797,7 +797,7 @@ int get_first_subnode_elem (sub_node my_main_node, int *cp, int start_cp_array_e
     /* Search backward */
     if (cp[start_cp_array_elem] < sub_nodes[result].codepoint) {
         int i;
-        printf("The current cp is less than the node %i I found\n", result);
+        fprintf(stderr, "The current cp is less than the node %i I found\n", result);
         for (i = result - 1 ; my_main_node.sub_node_link < i; i--) {
             if (sub_nodes[i].codepoint == cp[start_cp_array_elem]) {
                 result = i;
@@ -811,6 +811,18 @@ int get_first_subnode_elem (sub_node my_main_node, int *cp, int start_cp_array_e
 
     return -1;
 }
+int print_collation_data (sub_node node) {
+    int i;
+    int collation_element_elems = node.collation_key_elems;
+    int collation_element_start = node.collation_key_link;
+    printf("collation array start %i collation elements total: %i\n", collation_element_start, collation_element_elems);
+    for (i = collation_element_start; i < collation_element_start + collation_element_elems; i++) {
+        printf("[%i.%i.%i]", special_collation_keys[i].primary, special_collation_keys[i].secondary, special_collation_keys[i].tertiary);
+    }
+    printf("\n");
+    return 0;
+
+}
 int get_collation_elements (int *cp, int cp_elems) {
     int i;
     int main_node_elem = get_main_node(cp[0]);
@@ -819,6 +831,11 @@ int get_collation_elements (int *cp, int cp_elems) {
     int collation_element_start;
     if (main_node_elem == -1) {
         printf("Could not find codepoint %i\n", cp[0]);
+        return 0;
+    }
+    if (cp_elems == 1) {
+        print_sub_node(main_nodes[main_node_elem]);
+        print_collation_data(main_nodes[main_node_elem]);
         return 0;
     }
 
@@ -835,7 +852,7 @@ int get_collation_elements (int *cp, int cp_elems) {
     return 1;
 }
 int main (void) {
-    int cp[] = {1499,1468};
+    int cp[] = {7808};
     int cp_elems = sizeof(cp)/sizeof(int);
     get_collation_elements(cp, cp_elems);
 

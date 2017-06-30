@@ -110,10 +110,20 @@ for "UNIDATA/UCA/allkeys.txt".IO.lines -> $line {
     #last if $i > 1000;
     $i++;
 }
-note 'done processing';
 my @collation-keys-array;
 my @sub_nodes;
 my @main_nodes;
+#| (primary, secondary, tertiary, dot-star)
+sub add-collation-keys (@keys) {
+    my Str:D @keys-to-add = @keys.map({'{' ~ .join(',') ~ '}'});
+    say 'coll-keys: ', @keys-to-add.perl;
+    my Int:D $before-collation-array-elems = @collation-keys-array.elems;
+    @collation-keys-array.append: @keys-to-add;
+    my Int:D $after-collation-array-elems = @collation-keys-array.elems;
+    say "Collation-array-elems: Before $before-collation-array-elems After $after-collation-array-elems";
+    return $before-collation-array-elems, @keys.elems;
+}
+note 'done processing';
 sub add-sub_node (
     Int:D  $node's-cp!,
     Int:D :$min!,
@@ -121,23 +131,15 @@ sub add-sub_node (
     Int:D :$sub_node_elems!,
     Positional :$subnode_collation_keys
 ) {
-    my Int:D $before-collation-array-elems = @collation-keys-array.elems;
-    my Int:D $collation_link      = $subnode_collation_keys ?? @collation-keys-array.elems   !! -1;
-    my Int:D $collation_key_elems = $subnode_collation_keys ?? $subnode_collation_keys.elems !! -1;
-
-    my Int:D $subnode_link        = $sub_node_elems ?? @sub_nodes.elems + 1 !! -1;
-
+    my Int:D ($collation_link, $collation_key_elems) = $subnode_collation_keys
+        ?? add-collation-keys($subnode_collation_keys)
+        !! (-1,-1);
+    my Int:D $subnode_link = $sub_node_elems
+        ?? @sub_nodes.elems + 1
+        !! -1;
     my Int:D @a = $node's-cp, $min, $max, $sub_node_elems, $subnode_link, $collation_key_elems, $collation_link;
     say 'subnode: ', @a.perl;
     @sub_nodes.push: @a;
-    if $collation_key_elems != -1 {
-        die "No collation keys found?" unless $subnode_collation_keys.elems;
-        my Str:D @keys-to-add = $subnode_collation_keys.map({'{' ~ .join(',') ~ '}'});
-        say 'coll-keys: ', @keys-to-add.perl;
-        @collation-keys-array.append: @keys-to-add;
-        my Int:D $after-collation-array-elems = @collation-keys-array.elems;
-        say "Collation-array-elems: Before $before-collation-array-elems After $after-collation-array-elems";
-    }
 }
 my %hash-done;
 my @c-cp-array;
@@ -145,30 +147,17 @@ multi sub make-sub_node (Cool:D(Int) $cp!, Pair:D $node!) {
     die;
 }
 multi sub make-sub_node (Cool:D(Int) $prev-cp!, Hash:D $node!) {
-    #dump-node-info;
-    if $node<array>:exists {
-        my $joined = $node<codepoints>.join(',');
-        if %hash-done{$joined}:exists {
-            say "    i've processed this one before!!!";
-            return;
-        }
-        @c-cp-array.push: Pair.new($node<codepoints>, $node<array>);
-        %hash-done{$node<codepoints>.join(',')} =  True;
-    }
+    seen-node($node);
     sub dump-node-info (Str:D $description = '')  {
         note "{$description}Hash node: prev-cp: $prev-cp keys elems {$node.keys.elems} keys: {$node.keys.gist}\nvalues elems {$node.values.elems} values: {$node.values.gist}";
     }
-    note "";
-    dump-node-info "   ";
-    note "";
-
-    say '    WHAT: ', $node.WHAT;
-    say "    node.keys: ", $node.keys;
+    #say '    WHAT: ', $node.WHAT;
+    #say "    node.keys: ", $node.keys;
     my @numeric = only-numeric($node.keys);
     my @non-numeric = not-numeric($node.keys);
 
-    say "    NON NUMERIC: {@non-numeric.perl}" if @non-numeric;
-    say "    NUMERIC: {@numeric.perl}" if @numeric;
+    #say "    NON NUMERIC: {@non-numeric.perl}" if @non-numeric;
+    #say "    NUMERIC: {@numeric.perl}" if @numeric;
     my Int:D $min = @numeric ?? @numeric.min !! -1;
     my Int:D $max = @numeric ?? @numeric.max !! -1;
     my Int:D $sub_node_elems = @numeric.elems;
@@ -194,6 +183,16 @@ sub only-numeric ($list) {
 sub not-numeric ($list) {
     $list.grep({$_ !~~ /^<:Numeric>+/}).Array;
 }
+sub seen-node ($node) {
+    if $node<array>:exists {
+        my $joined = $node<codepoints>.join(',');
+        if %hash-done{$joined}:exists {
+            die "    i've processed this one before!!!";
+        }
+        @c-cp-array.push: Pair.new($node<codepoints>, $node<array>);
+        %hash-done{$node<codepoints>.join(',')} =  True;
+    }
+}
 # Receives pairs where the key is the main node's codepoint and the value is a hash containing
 # the subnodes
 sub make-main_node (*@pairs) {
@@ -205,13 +204,14 @@ sub make-main_node (*@pairs) {
         my Hash:D $node  = $pair.value;
         my Int:D $cp    = $pair.key.Int;
         my Int:D @numeric-keys = only-numeric($node.keys);
-        my Int:D $max   = @numeric-keys.max;
-        my Int:D $min   = @numeric-keys.min;
+        my Int:D $max   = @numeric-keys ?? @numeric-keys.max !! -1;
+        my Int:D $min   = @numeric-keys ?? @numeric-keys.min !! -1;
         my Int:D $sub_node_elems = @numeric-keys.elems;
-        my Int:D $collation_key_elems = $node<array>:exists ?? $node<array>.elems !! 0;
-        my Int:D $collation_key_link = $node<array>:exists ?? @collation-keys-array.elems !! -1;
-        die "can't handle main nodes with collation elements" if 0 < $collation_key_elems;
-        my $main-node-c-struct = '{' ~ ($cp, $min, $max, $sub_node_elems, @sub_nodes.elems, $collation_key_elems, $collation_key_elems).join(',') ~ '}';
+        my Int:D ($collation_link, $collation_key_elems) = $node<array>:exists
+            ?? add-collation-keys($node<array>)
+            !! (-1,-1);
+        seen-node($node);
+        my $main-node-c-struct = '{' ~ ($cp, $min, $max, $sub_node_elems, @sub_nodes.elems, $collation_key_elems, $collation_link).join(',') ~ '}';
         @main_nodes.push: $main-node-c-struct;
         for @numeric-keys.sort -> $key {
             my Int:D $cp = $key;
@@ -226,17 +226,21 @@ sub make-main_node (*@pairs) {
 }
 sub compose-the-arrays {
     my @list-of-cp's-to-make-nodes-for;
+    my @composed-arrays;
     my %nody = make-main_node (%trie.pairs) #`(119226 => %trie{119226});#, |@list-of-cp's-to-make-nodes-for;
-    say "#define main_nodes_elems @main_nodes.elems()";
-    say compose-array 'sub_node', 'main_nodes', @main_nodes;
-    say "#define sub_nodes_elems @sub_nodes.elems()";
-    say compose-array 'sub_node', 'sub_nodes', @sub_nodes;
-    say "#define special_collation_keys_elems @collation-keys-array.elems()";
-    say compose-array 'collation_key', 'special_collation_keys', @collation-keys-array;
+    @composed-arrays.push: "#define main_nodes_elems @main_nodes.elems()";
+    @composed-arrays.push: compose-array('sub_node', 'main_nodes', @main_nodes);
+    @composed-arrays.push: "#define sub_nodes_elems @sub_nodes.elems()";
+    @composed-arrays.push: compose-array( 'sub_node', 'sub_nodes', @sub_nodes);
+    @composed-arrays.push: "#define special_collation_keys_elems @collation-keys-array.elems()";
+    @composed-arrays.push: compose-array( 'collation_key', 'special_collation_keys', @collation-keys-array);
+    my $collation-txt = slurp-snippets('collation', 'head') ~ @composed-arrays.join("\n") ~ slurp-snippets('collation', 'main');
+    spurt "source/collation.c", $collation-txt;
     use lib 'lib';
     use ArrayCompose;
+    use UCDlib;
     for ^@c-cp-array -> $index {
-        say '{' ~ @c-cp-array[$index].key.join(',') ~ '}' ~ '  ' ~ @c-cp-array[$index].value.join('.');
+        say '{' ~ @c-cp-array[$index].key.join(',') ~ '}' ~ '  ' ~ @c-cp-array[$index].value.map({ '[' ~ .join('.') ~ ']'}).join;
     }
     exit;
 }
