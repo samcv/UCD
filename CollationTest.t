@@ -2,7 +2,7 @@
 use Test;
 my Str $folder = "UNIDATA/UCA/CollationTest";
 my IO::Path $file;
-sub MAIN {
+sub MAIN (Bool:D :$fatal = False) {
     $file = "$folder/CollationTest_NON_IGNORABLE_SHORT.txt".IO;
     die "File not found: $file" unless $file.f;
     my @failed;
@@ -34,7 +34,7 @@ sub MAIN {
         )
     }
     my $i = 0;
-    my $fh = open ($file.basename, '.failed.txt'), :a;
+    my $fh = open ($file.basename ~ '.failed.txt'), :a;
     while (@lines[$i + 1]) {
         if @lines[$i].key eq @lines[$i + 1].key {
             $i++;
@@ -43,13 +43,14 @@ sub MAIN {
         unless is-deeply @lines[$i].key unicmp @lines[$i + 1].key, Less,
             "@lines[$i].key() unicmp @lines[$i + 1].key() {@lines[$i].value ?? “# @lines[$i].value() <=> @lines[$i + 1].value()” !! ""}"
         {
-            #`($fh.) say format-printout(@lines[$i], @lines[$i+1])
+            $fh.say: format-printout(@lines[$i], @lines[$i+1])
             #`( unless @lines[$i].key.ords.any.uniprop('MVM_COLLATION_QC') #`) ;
-            exit 1;
+            exit 1 if $fatal;
         }
         $i++;
     }
     $fh.close;
+    say 'done';
     done-testing;
 }
 sub format-printout (Pair:D $first, Pair:D $second) {
