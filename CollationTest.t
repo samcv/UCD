@@ -14,7 +14,7 @@ sub MAIN (Bool:D :$fatal = False) {
         #say $line-no;
         #say $_;
         my $short-test-regex = regex {
-             ^ $<codes>=(<[A..F0..9\s]>+) $
+            ^ $<codes>=( [<:AHex>+]+ % \s+ ) $
         };
         my $full-test-regex = regex {
             ^ $<codes>=(<[A..F0..9\s]>+)
@@ -25,13 +25,14 @@ sub MAIN (Bool:D :$fatal = False) {
         };
         next if $_ eq '' or .starts-with('#');
         $_ ~~ $short-test-regex;
+        my $codes = $<codes>.split(' ').».parse-base(16);
+        if $codes.grep({is-surrogate($_)}).not {
+
         take Pair.new(
-            Uni.new(
-                $<codes>.split(' ').».parse-base(16).grep({
-                    not is-surrogate($_)
-            })).Str,
+            Uni.new(|$codes).Str,
             ($<comment>.defined ?? ~$<comment> !! "line number $line-no")
-        )
+        );
+        } #unless $codes.grep({is-surrogate($_)});
     }
     my $i = 0;
     my $fh = open ($file.basename ~ '.failed.txt'), :a;
@@ -43,7 +44,7 @@ sub MAIN (Bool:D :$fatal = False) {
         unless is-deeply @lines[$i].key unicmp @lines[$i + 1].key, Less,
             "@lines[$i].key() unicmp @lines[$i + 1].key() {@lines[$i].value ?? “# @lines[$i].value() <=> @lines[$i + 1].value()” !! ""}"
         {
-            $fh.say: format-printout(@lines[$i], @lines[$i+1])
+            ($fatal ?? $*IN !! $fh).say: format-printout(@lines[$i], @lines[$i+1])
             #`( unless @lines[$i].key.ords.any.uniprop('MVM_COLLATION_QC') #`) ;
             exit 1 if $fatal;
         }
