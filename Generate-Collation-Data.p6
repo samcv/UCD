@@ -1,5 +1,7 @@
 use lib 'lib';
 use Collation-Gram;
+use ArrayCompose;
+use UCDlib;
 my $debug = False;
 my $test-data = Q:to/END/;
 0F68  ; [.2E6C.0020.0002] # TIBETAN LETTER A
@@ -51,7 +53,7 @@ class p6node {
     has @!collation_elements;
     has $!last;
     has %.next is rw;
-    method next-cps                           { %!next.keys.map(*.Int).sort }
+    method next-cps                           { %!next.keys.map(*.Int).sort  }
     method has-collation                      { @!collation_elements.Bool    }
     method get-collation                      { @!collation_elements }
     method set-collation (Positional:D $list) {
@@ -81,13 +83,20 @@ sub p6node-create-or-find-node (Int:D $cp, p6node:D $p6node is rw) is rw {
 sub print-var ($var) { $var.gist }
 my Str $Unicode-Version;
 my @implicit-weights;
+my $max-cp = 0;
+sub int-bitwidth (Int:D $int) {
+    $int.base(2).chars + 1;
+}
+sub uint-bitwidth (Int:D $int) {
+    $int.base(2).chars;
+}
 sub parse-test-data (p6node:D $main-p6node) {
-    my $do-test-data = True;
+    my $do-test-data = False;
     my $data = $do-test-data ?? $test-data !! "UNIDATA/UCA/allkeys.txt".IO;
     my $line-no;
     for $data.lines -> $line {
         $line-no++;
-        last if 10_000 < $line-no;
+        #last if 10_000 < $line-no;
         #say $line-no;
         next if $line eq '' or $line.starts-with('#');
         if $line.starts-with('@version') {
@@ -106,6 +115,7 @@ sub parse-test-data (p6node:D $main-p6node) {
         my $node = $main-p6node;
         say $line, "\n", $var<codepoints> if $debug;
         for $var<codepoints>.list -> $cp {
+            $max-cp = $cp if $max-cp < $cp;
             $node = p6node-create-or-find-node($cp, $node);
         }
         $node.set-collation($var<array>);
@@ -115,10 +125,10 @@ sub parse-test-data (p6node:D $main-p6node) {
 
 class sub_node {
     has Int $.codepoint;
-    has Int $.sub_node_elems      is rw;
+    has Int $.sub_node_elems      is rw ;
     has Int $.sub_node_link       is rw;
-    has Int $.collation_key_elems is rw;
-    has Int $.collation_key_link  is rw;
+    has Int $.collation_key_elems is rw =  0;
+    has Int $.collation_key_link  is rw = -1;
     has Int $.element             is rw;
     method build {
         $!codepoint,
@@ -126,7 +136,9 @@ class sub_node {
         $.sub_node_link,
         $.collation_key_elems,
         $.collation_key_link,
-        $.element
+    }
+    method Str {
+        "\{{$.codepoint.fmt("0x%X")}, $!sub_node_elems, $!sub_node_link, $!collation_key_elems, $!collation_key_link\}"
     }
 }
 #| Adds the initial codepoint nodes to @main-node
@@ -164,9 +176,11 @@ sub sub_node-add-to-c-data-from-sub_node
     for $p6node.next-cps -> $cp {
         $last-link = sub_node-add-sub_node($cp, @main-node);
         sub_node-add-to-c-data-from-sub_node(@main-node[$last-link], p6node-find-node($cp, $p6node), @main-node, @collation-elements);
-        $first-link = $last-link if !$first-link.defined;
+        $first-link = $last-link if $first-link == -1;
     }
     $sub_node.sub_node_link = $first-link;
+
+    #say Dump $sub_node;
     $sub_node;
 }
 sub sub_node-add-sub_node (Int:D $cp, @main-node --> Int:D) {
@@ -176,12 +190,14 @@ sub sub_node-add-sub_node (Int:D $cp, @main-node --> Int:D) {
     @main-node.push: $node;
     return @main-node.elems - 1;
 }
+my Int:D $max-collation-elems = 0;
 sub sub_node-add-collation-elems-from-p6node (sub_node:D $sub_node is rw, p6node:D $p6node is rw, @collation-elements --> sub_node:D) is rw {
     die "!\$p6node.has-collation" unless $p6node.has-collation;
     my Int:D $before-elems = @collation-elements.elems;
     for $p6node.get-collation <-> $element {
         @collation-elements.push: $element;
     }
+    $max-collation-elems = $p6node.get-collation.elems if $max-collation-elems < $p6node.get-collation.elems;
     my Int:D $after-elems = @collation-elements.elems;
     $sub_node.collation_key_link  = $before-elems;
     $sub_node.collation_key_elems = $after-elems - $before-elems;
@@ -193,21 +209,74 @@ my @collation-elements;
 my $main-p6node = p6node.new;
 
 parse-test-data($main-p6node);
-
 use Data::Dump;
 #say Dump $main-p6node;
 my $main-node-elems = add-main-node-to-c-data($main-p6node, @main-node);
 #say Dump $main-p6node;
 #exit;
 sub_node-flesh-out-tree-from-main-node-elems($main-p6node, @main-node, @collation-elements);
-say Dump @main-node;
+#say Dump $main-p6node;
+#say Dump @main-node;
 use JSON::Fast;
 spurt 'out_nodes', to-json(@main-node.map(*.build));
 #for ^@main-node {
     #say "\@main-node[$_]:\n", Dump @main-node[$_];
 #}
 say now - INIT now;
-
+multi sub test-it (Str:D $str) {
+    test-it $str.split(' ')».parse-base(16);
+}
+multi sub test-it (@list) {
+    for ^$main-node-elems -> $i {
+        if @main-node[$i].codepoint == @list[0] {
+            say "First node";
+            say @main-node[$i].Str;
+            say "Second node";
+            say @main-node[@main-node[$i].sub_node_link];
+            say "Collation linked";
+            say format-collation-Str @collation-elements[@main-node[@main-node[$i].sub_node_link].collation_key_link];
+            say "done";
+        }
+    }
+}
+sub format-collation-Str ($a) {
+    my Str $out;
+    for $a -> $item is copy {
+        my $thing = $item.pop;
+        my Str:D $thing-str = $thing ?? '*' !! '.';
+        $out ~= "[%s%.4X.%.4X.%.4X]".sprintf($thing-str, |$item);
+    }
+    $out;
+}
+my @composed-arrays;
+my $struct = qq:to/END/;
+struct sub_node \{
+    unsigned int codepoint :{uint-bitwidth($max-cp)};
+    unsigned int sub_node_elems :20;
+    int sub_node_link :{int-bitwidth(@main-node.elems -1)};
+    unsigned int collation_key_elems :{uint-bitwidth($max-collation-elems)};
+    int collation_key_link :{int-bitwidth(@collation-elements.elems - 1)};
+\};
+typedef struct sub_node sub_node;
+END
+@composed-arrays.push: slurp-snippets('collation', 'head');
+@composed-arrays.push: $struct;
+@composed-arrays.push: "#define main_nodes_elems @main-node.elems()";
+@composed-arrays.push: "#define starter_main_nodes_elems $main-node-elems";
+@composed-arrays.push: compose-array('sub_node', 'main_nodes', @main-node».build);
+@composed-arrays.push: "#define special_collation_keys_elems @collation-elements.elems()";
+@composed-arrays.push: compose-array( 'collation_key', 'special_collation_keys', @collation-elements);
+@composed-arrays.push: Q:to/END/;
+int min (sub_node node) {
+    return node.sub_node_link == -1 ? -1 : main_nodes[node.sub_node_link].codepoint;
+}
+int max (sub_node node) {
+    return node.sub_node_link == -1 ? -1 : main_nodes[node.sub_node_link + node.sub_node_elems - 1].codepoint;
+}
+END
+spurt "test.c", @composed-arrays.join("\n");
+test-it("AAB5 AA87");
+test-it("0F71 0F72");
 #say Dump @main-node;
  #`｢
 %data{20} = p6node
